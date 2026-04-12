@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>TLS Monitor — Sertifikat İnspektoru</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--bg2:#161b22;--bg3:#1c2333;--bg4:#21262d;--bg5:#2d333b;
+  --border:rgba(240,246,252,0.1);--border2:rgba(240,246,252,0.15);
+  --text:#e6edf3;--text2:#8b949e;--text3:#6e7681;
+  --green:#3fb950;--green-bg:rgba(63,185,80,0.1);--green-border:rgba(63,185,80,0.25);
+  --yellow:#e3b341;--yellow-bg:rgba(227,179,65,0.1);--yellow-border:rgba(227,179,65,0.25);
+  --red:#f85149;--red-bg:rgba(248,81,73,0.1);--red-border:rgba(248,81,73,0.25);
+  --blue:#58a6ff;--blue-bg:rgba(88,166,255,0.1);--blue-border:rgba(88,166,255,0.25);
+  --purple:#bc8cff;--purple-bg:rgba(188,140,255,0.1);--purple-border:rgba(188,140,255,0.25);
+  --accent:#1f6feb;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;line-height:1.6}
+
+/* HEADER */
+header{border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;gap:12px;position:sticky;top:0;background:rgba(13,17,23,0.97);backdrop-filter:blur(12px);z-index:300}
+.logo{width:28px;height:28px;background:linear-gradient(135deg,var(--accent),#388bfd);border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.logo svg{width:15px;height:15px;fill:white}
+header h1{font-size:15px;font-weight:600;letter-spacing:-.2px}
+.header-sep{width:1px;height:20px;background:var(--border2)}
+.header-sub{font-size:12px;color:var(--text3)}
+.hright{margin-left:auto;display:flex;align-items:center;gap:10px}
+.hgrade{display:none;font-size:17px;font-weight:700;width:34px;height:34px;border-radius:7px;align-items:center;justify-content:center;border:1.5px solid;transition:all .3s}
+.powered{font-size:11px;color:var(--text3);background:var(--bg4);border:1px solid var(--border);border-radius:20px;padding:2px 9px}
+
+/* LAYOUT */
+.wrap{max-width:1000px;margin:0 auto;padding:40px 24px}
+
+/* HERO */
+.hero{text-align:center;margin-bottom:36px}
+.hero-badge{display:inline-flex;align-items:center;gap:6px;background:var(--green-bg);border:1px solid var(--green-border);color:var(--green);border-radius:20px;padding:4px 12px;font-size:12px;font-weight:500;margin-bottom:16px}
+.hero-badge svg{width:10px;height:10px;fill:var(--green)}
+.hero h2{font-size:30px;font-weight:700;letter-spacing:-.6px;margin-bottom:8px;background:linear-gradient(135deg,var(--text) 60%,var(--text2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero p{color:var(--text2);font-size:14px;max-width:480px;margin:0 auto}
+
+/* SEARCH */
+.search-wrap{max-width:600px;margin:0 auto 12px}
+.srow{display:flex;gap:8px}
+.srow input{flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:10px;padding:12px 16px;color:var(--text);font-size:15px;outline:none;transition:border-color .15s,box-shadow .15s}
+.srow input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(31,111,235,.12)}
+.srow input::placeholder{color:var(--text3)}
+.srow button{background:var(--accent);border:none;border-radius:10px;padding:12px 22px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap}
+.srow button:hover{background:#388bfd;transform:translateY(-1px)}
+.srow button:disabled{opacity:.4;cursor:not-allowed;transform:none}
+
+/* CHIPS */
+.chips{text-align:center;margin-bottom:36px}
+.chips .lbl{color:var(--text3);font-size:12px;margin-right:6px}
+.chip{display:inline-block;background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:3px 11px;font-size:12px;color:var(--text2);cursor:pointer;margin:3px;transition:all .15s}
+.chip:hover{border-color:var(--accent);color:var(--blue);transform:translateY(-1px)}
+
+/* LOADING */
+.loading{display:none;text-align:center;padding:64px 0}
+.spinner{width:32px;height:32px;border:2.5px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading p{color:var(--text2);font-size:13px;margin-bottom:12px}
+.progress-wrap{max-width:280px;margin:0 auto}
+.progress-bar{height:3px;background:var(--bg5);border-radius:2px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),#388bfd);border-radius:2px;transition:width .3s ease;width:0}
+.loading-steps{display:flex;flex-direction:column;gap:4px;margin-top:14px;font-size:11px;color:var(--text3)}
+.step{display:flex;align-items:center;gap:6px;opacity:.4;transition:opacity .3s}
+.step.active{opacity:1;color:var(--text2)}
+.step.done{opacity:.6}
+.step-dot{width:5px;height:5px;border-radius:50%;background:var(--text3);flex-shrink:0}
+.step.active .step-dot{background:var(--accent)}
+.step.done .step-dot{background:var(--green)}
+
+/* ERROR */
+.err{display:none;background:var(--red-bg);border:1px solid var(--red-border);border-radius:10px;padding:14px 18px;color:var(--red);margin-bottom:20px;font-size:13px;display:none}
+
+/* RESULT */
+.result{display:none}
+
+/* TOP BAR */
+.topbar{display:flex;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+.score-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:22px;display:flex;align-items:center;gap:20px;flex:1;min-width:240px;cursor:pointer;transition:all .2s}
+.score-card:hover{border-color:var(--border2);transform:translateY(-1px)}
+.score-ring{position:relative;width:76px;height:76px;flex-shrink:0}
+.score-ring svg{transform:rotate(-90deg);width:76px;height:76px}
+.score-ring circle{fill:none;stroke-width:6;stroke-linecap:round}
+.ring-track{stroke:var(--bg5)}
+.ring-fill{stroke:var(--green);transition:stroke-dashoffset .8s cubic-bezier(.4,0,.2,1),stroke .3s}
+.score-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.score-num{font-size:20px;font-weight:700;line-height:1}
+.score-lbl{font-size:9px;color:var(--text3);margin-top:1px;letter-spacing:.3px}
+.score-info h3{font-size:15px;font-weight:600;margin-bottom:4px}
+.score-info p{font-size:12px;color:var(--text2);line-height:1.5}
+.score-info .hint{font-size:11px;color:var(--accent);margin-top:6px}
+
+.grade-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px 24px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:100px;cursor:pointer;transition:all .2s}
+.grade-card:hover{border-color:var(--border2);transform:translateY(-1px)}
+.grade-big{font-size:44px;font-weight:700;line-height:1;transition:color .3s}
+.grade-lbl{font-size:10px;color:var(--text3);margin-top:5px;text-transform:uppercase;letter-spacing:.6px}
+.grade-hint{font-size:10px;color:var(--accent);margin-top:6px}
+
+/* META PILLS */
+.meta-row{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+.mpill{background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:5px 13px;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;transition:all .15s}
+.mpill:hover{border-color:var(--border2);transform:translateY(-1px)}
+.mpill b{font-weight:500}
+
+/* ISSUES */
+.issue-sec{margin-bottom:18px}
+.igroup{border-radius:10px;margin-bottom:8px;overflow:hidden}
+.ihead{display:flex;align-items:center;gap:8px;padding:10px 16px}
+.ihead.crit{background:rgba(248,81,73,.1);border:1px solid var(--red-border)}
+.ihead.high{background:rgba(227,179,65,.08);border:1px solid var(--yellow-border)}
+.ihead.warn{background:rgba(88,166,255,.07);border:1px solid var(--blue-border)}
+.ihead h4{font-size:13px;font-weight:600;flex:1}
+.ihead.crit h4{color:var(--red)}
+.ihead.high h4{color:var(--yellow)}
+.ihead.warn h4{color:var(--blue)}
+.icnt{font-size:11px;padding:2px 9px;border-radius:20px;font-weight:600}
+.cnt-r{background:var(--red-bg);color:var(--red)}
+.cnt-y{background:var(--yellow-bg);color:var(--yellow)}
+.cnt-b{background:var(--blue-bg);color:var(--blue)}
+.ibody{background:var(--bg2);border:1px solid var(--border);border-top:none;border-radius:0 0 10px 10px;padding:4px 0}
+.iitem{display:flex;align-items:flex-start;gap:10px;padding:9px 16px;font-size:13px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s}
+.iitem:hover{background:var(--bg3)}
+.iitem:last-child{border-bottom:none}
+.idot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.itext{flex:1;color:var(--text)}
+.iinfo-btn{font-size:10px;color:var(--text3);background:var(--bg4);border:1px solid var(--border);border-radius:4px;padding:2px 7px;flex-shrink:0;margin-top:1px;white-space:nowrap}
+
+/* TABS */
+.tabs{display:flex;gap:0;margin-bottom:18px;border-bottom:1px solid var(--border);overflow-x:auto}
+.tab{padding:9px 16px;font-size:13px;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;white-space:nowrap;flex-shrink:0}
+.tab.active{color:var(--text);border-bottom-color:var(--accent)}
+.tab:hover:not(.active){color:var(--text)}
+.tab-pane{display:none}
+.tab-pane.active{display:block}
+
+/* CARDS */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+@media(max-width:600px){.g2{grid-template-columns:1fr}}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px 20px;cursor:pointer;transition:all .2s}
+.card:hover{border-color:var(--border2);transform:translateY(-1px)}
+.card.full{grid-column:1/-1}
+.card h4{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);margin-bottom:14px;display:flex;align-items:center;gap:7px}
+.hint{font-size:10px;color:var(--accent);background:var(--blue-bg);border-radius:4px;padding:1px 7px;font-weight:500;text-transform:none;letter-spacing:0}
+.drow{display:flex;justify-content:space-between;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border);gap:12px;font-size:13px}
+.drow:last-child{border-bottom:none}
+.drow .lbl{color:var(--text2);min-width:130px;flex-shrink:0}
+.drow .val{color:var(--text);text-align:right;word-break:break-all;font-family:'SF Mono',Consolas,monospace;font-size:12px}
+
+/* BADGES */
+.badge{display:inline-flex;align-items:center;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:600}
+.bg{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border)}
+.by{background:var(--yellow-bg);color:var(--yellow);border:1px solid var(--yellow-border)}
+.br{background:var(--red-bg);color:var(--red);border:1px solid var(--red-border)}
+.bb{background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-border)}
+.bgr{background:var(--bg4);color:var(--text2);border:1px solid var(--border2)}
+
+/* MISC */
+.dbar-wrap{height:5px;background:var(--bg5);border-radius:3px;margin-top:7px;overflow:hidden}
+.dbar{height:5px;border-radius:3px;transition:width .5s}
+.san-wrap{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px}
+.san-tag{background:var(--bg4);border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-size:11px;font-family:'SF Mono',Consolas,monospace;color:var(--text2)}
+.chain-item{padding:12px 0 12px 26px;border-bottom:1px solid var(--border);position:relative}
+.chain-item:last-child{border-bottom:none}
+.chain-line{position:absolute;left:8px;top:0;bottom:0;width:1px;background:var(--border2)}
+.chain-item:last-child .chain-line{height:50%}
+.chain-dot{position:absolute;left:4px;top:15px;width:9px;height:9px;border-radius:50%;border:2px solid var(--accent);background:var(--bg)}
+.chain-cn{font-size:13px;font-weight:500}
+.chain-meta{font-size:11px;color:var(--text3);margin-top:2px}
+
+/* DRAWER */
+.drawer-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:400;backdrop-filter:blur(4px)}
+.drawer-overlay.open{display:flex;align-items:flex-end;justify-content:center}
+@media(min-width:640px){.drawer-overlay.open{align-items:center}}
+.drawer{background:var(--bg2);border:1px solid var(--border2);border-radius:18px 18px 0 0;width:100%;max-width:680px;max-height:90vh;overflow-y:auto;padding:26px 26px 36px;position:relative;animation:slideUp .22s ease}
+@media(min-width:640px){.drawer{border-radius:16px;max-height:82vh}}
+@keyframes slideUp{from{transform:translateY(32px);opacity:0}to{transform:translateY(0);opacity:1}}
+.drawer-close{position:absolute;top:16px;right:18px;background:var(--bg4);border:1px solid var(--border);border-radius:7px;padding:5px 12px;color:var(--text2);font-size:13px;cursor:pointer;transition:all .15s}
+.drawer-close:hover{color:var(--text);border-color:var(--border2)}
+.drawer h2{font-size:18px;font-weight:600;margin-bottom:5px;padding-right:60px}
+.drawer .dsub{font-size:13px;color:var(--text2);margin-bottom:20px}
+.drawer hr{border:none;border-top:1px solid var(--border);margin:18px 0}
+.dinfo-section{margin-bottom:20px}
+.dinfo-section h3{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.dinfo-section p{font-size:13px;color:var(--text2);line-height:1.75;margin-bottom:8px}
+.dinfo-section p:last-child{margin-bottom:0}
+.dinfo-kv{display:flex;flex-direction:column;gap:6px}
+.dinfo-row{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:9px 12px;background:var(--bg3);border-radius:8px;font-size:13px}
+.dinfo-row .k{color:var(--text2);min-width:150px;flex-shrink:0}
+.dinfo-row .v{color:var(--text);text-align:right;word-break:break-all;font-family:'SF Mono',Consolas,monospace;font-size:12px}
+.tip-box{background:var(--blue-bg);border:1px solid var(--blue-border);border-radius:9px;padding:13px 16px;font-size:12px;color:var(--text2);margin-top:14px;line-height:1.7}
+.tip-box b{color:var(--blue)}
+.tip-box code{background:var(--bg4);padding:1px 5px;border-radius:4px;font-size:11px;font-family:'SF Mono',Consolas,monospace}
+.status-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:9px;font-size:13px;font-weight:500;margin-bottom:16px}
+
+/* HISTORY */
+.hist{margin-top:40px}
+.hist h3{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:12px}
+.hist-list{display:flex;flex-direction:column;gap:6px}
+.hitem{display:flex;align-items:center;gap:10px;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:10px 14px;cursor:pointer;transition:all .15s}
+.hitem:hover{border-color:var(--border2);transform:translateY(-1px)}
+.hdot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.hdom{font-size:13px;flex:1}
+.htime{font-size:11px;color:var(--text3)}
+
+/* AI RESULT */
+.ai-label{font-size:11px;color:var(--accent);margin-bottom:12px;display:flex;align-items:center;gap:5px}
+.ai-label svg{width:11px;height:11px;fill:var(--accent)}
+
+footer{border-top:1px solid var(--border);padding:20px;text-align:center;color:var(--text3);font-size:12px;margin-top:56px}
+footer a{color:var(--text3);text-decoration:none}
+footer a:hover{color:var(--blue)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 4l6 2.67V11c0 3.89-2.54 7.63-6 8.93C8.54 18.63 6 14.89 6 11V7.67L12 5zm-1 3v4h2V8h-2zm0 6v2h2v-2h-2z"/></svg>
+  </div>
+  <h1>TLS Monitor</h1>
+  <div class="header-sep"></div>
+  <span class="header-sub">Sertifikat İnspektoru</span>
+  <div class="hright">
+    <span class="powered">Node.js backend</span>
+    <div class="hgrade" id="hGrade"></div>
+  </div>
+</header>
+
+<!-- DRAWER -->
+<div class="drawer-overlay" id="drawerOverlay" onclick="closeDrawer(event)">
+  <div class="drawer" id="drawer">
+    <button class="drawer-close" onclick="closeDrawer()">✕ Bağla</button>
+    <div id="drawerContent"></div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="hero-badge">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>
+      Real-time TLS Analizi
+    </div>
+    <h2>SSL/TLS Sertifikat İnspektoru</h2>
+    <p>Backend vasitəsilə həqiqi TLS handshake — sertifikat, cipher, zəiflik, chain</p>
+  </div>
+
+  <div class="search-wrap">
+    <form class="srow" id="form">
+      <input type="text" id="inp" placeholder="example.com və ya example.com:8443" autocomplete="off" autocapitalize="off" spellcheck="false"/>
+      <button type="submit" id="btn">Skan et</button>
+    </form>
+  </div>
+
+  <div class="chips">
+    <span class="lbl">Cəhd et:</span>
+    <span class="chip" onclick="go('google.com')">google.com</span>
+    <span class="chip" onclick="go('github.com')">github.com</span>
+    <span class="chip" onclick="go('cloudflare.com')">cloudflare.com</span>
+    <span class="chip" onclick="go('aztu.edu.az')">aztu.edu.az</span>
+    <span class="chip" onclick="go('expired.badssl.com')">expired (bad)</span>
+    <span class="chip" onclick="go('self-signed.badssl.com')">self-signed (bad)</span>
+    <span class="chip" onclick="go('tls-v1-0.badssl.com:1010')">TLS 1.0 (bad)</span>
+  </div>
+
+  <div class="err" id="err"></div>
+
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <p id="lmsg">Backend-ə qoşulur…</p>
+    <div class="progress-wrap">
+      <div class="progress-bar"><div class="progress-fill" id="progFill"></div></div>
+    </div>
+    <div class="loading-steps">
+      <div class="step" id="s1"><div class="step-dot"></div>DNS həll edilir</div>
+      <div class="step" id="s2"><div class="step-dot"></div>TLS handshake</div>
+      <div class="step" id="s3"><div class="step-dot"></div>Sertifikat oxunur</div>
+      <div class="step" id="s4"><div class="step-dot"></div>Zəiflik analizi</div>
+      <div class="step" id="s5"><div class="step-dot"></div>Nəticə hazırlanır</div>
+    </div>
+  </div>
+
+  <div class="result" id="result">
+    <div class="topbar">
+      <div class="score-card" id="scoreCard" onclick="showScoreInfo()">
+        <div class="score-ring">
+          <svg viewBox="0 0 76 76">
+            <circle class="ring-track" cx="38" cy="38" r="32"/>
+            <circle class="ring-fill" id="ringFill" cx="38" cy="38" r="32" stroke-dasharray="201" stroke-dashoffset="201"/>
+          </svg>
+          <div class="score-center">
+            <span class="score-num" id="scoreNum">—</span>
+            <span class="score-lbl">/ 100</span>
+          </div>
+        </div>
+        <div class="score-info">
+          <h3 id="scoreTitle">—</h3>
+          <p id="scoreSub">—</p>
+          <div class="hint">Balı görmək üçün klik et →</div>
+        </div>
+      </div>
+      <div class="grade-card" id="gradeCard" onclick="showGradeInfo()">
+        <div class="grade-big" id="gradeBig">—</div>
+        <div class="grade-lbl">TLS Qiyməti</div>
+        <div class="grade-hint">Klik et →</div>
+      </div>
+    </div>
+
+    <div class="meta-row" id="metaRow"></div>
+    <div class="issue-sec" id="issueSec"></div>
+
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('cert')">📜 Sertifikat</div>
+      <div class="tab" onclick="switchTab('tls')">🔒 TLS & Cipher</div>
+      <div class="tab" onclick="switchTab('san')">🌐 SANs</div>
+      <div class="tab" onclick="switchTab('chain')">⛓ Zəncir</div>
+      <div class="tab" onclick="switchTab('extra')">⚙ Detallar</div>
+    </div>
+
+    <div id="certPane" class="tab-pane active"></div>
+    <div id="tlsPane" class="tab-pane"></div>
+    <div id="sanPane" class="tab-pane"></div>
+    <div id="chainPane" class="tab-pane"></div>
+    <div id="extraPane" class="tab-pane"></div>
+
+    <div style="text-align:center;color:var(--text3);font-size:11px;margin-top:18px" id="scanTime"></div>
+  </div>
+
+  <div class="hist" id="histSec" style="display:none">
+    <h3>Son Skanlar</h3>
+    <div class="hist-list" id="histList"></div>
+  </div>
+</div>
+
+<footer>
+  TLS Monitor · Real Node.js TLS Handshake ·
+  <a href="https://github.com" target="_blank">GitHub</a> ·
+  Netlify Functions powered
+</footer>
+
+<script>
+const API = "/api/check-tls";
+let scanHistory = [];
+try { scanHistory = JSON.parse(localStorage.getItem("tls_hist_v2")||"[]"); } catch{}
+let LAST = null;
+
+function go(d){ document.getElementById("inp").value=d; document.getElementById("form").dispatchEvent(new Event("submit")); }
+
+document.getElementById("form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const raw = document.getElementById("inp").value.trim();
+  if(!raw) return;
+  await scan(raw);
+});
+
+async function scan(raw){
+  const domain = raw.replace(/^https?:\/\//,"").replace(/\/.*$/,"");
+  setLoading(true); hideErr(); hide("result");
+  animateSteps();
+
+  try{
+    const res = await fetch(API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domain })
+    });
+    if(!res.ok) throw new Error(`Server xətası: HTTP ${res.status}`);
+    const data = await res.json();
+
+    setLoading(false);
+    if(data.error && !data.status){ showErr(data.error); return; }
+    LAST = data;
+    render(data);
+    addHist(data);
+  } catch(err){
+    setLoading(false);
+    showErr("Skan uğursuz oldu: " + err.message);
+  }
+}
+
+let stepTimer = null;
+function animateSteps(){
+  const steps = ["s1","s2","s3","s4","s5"];
+  steps.forEach(s => { const el=document.getElementById(s); el.classList.remove("active","done"); });
+  setProgress(5);
+  let i = 0;
+  if(stepTimer) clearInterval(stepTimer);
+  stepTimer = setInterval(()=>{
+    if(i > 0) document.getElementById(steps[i-1]).classList.replace("active","done");
+    if(i < steps.length){
+      document.getElementById(steps[i]).classList.add("active");
+      setProgress(10 + i*18);
+      i++;
+    } else { clearInterval(stepTimer); setProgress(95); }
+  }, 700);
+}
+
+function render(d){
+  if(stepTimer){ clearInterval(stepTimer); }
+  document.querySelectorAll(".step").forEach(s=>s.classList.add("done"));
+  setProgress(100);
+
+  const score = d.score ?? 0;
+  const arc = document.getElementById("ringFill");
+  arc.style.strokeDashoffset = 201 - (score/100)*201;
+  arc.style.stroke = score>=80?"var(--green)":score>=50?"var(--yellow)":"var(--red)";
+  document.getElementById("scoreNum").textContent = score;
+  document.getElementById("scoreTitle").textContent =
+    d.status==="SECURE"?"Sertifikat sağlamdır":d.status==="WARNING"?"Xəbərdarlıqlar var":"Kritik problemlər!";
+  document.getElementById("scoreSub").textContent =
+    d.error||(d.certificate ? `${d.domain}:${d.port||443} · ${d.certificate.daysRemaining !== null ? (d.certificate.daysRemaining >= 0 ? d.certificate.daysRemaining+" gün qalıb" : "MÜDDƏTİ BİTİB") : ""}` : d.domain);
+
+  const grade = d.tlsGrade || "?";
+  const gc = gradeColor(grade);
+  const gEl = document.getElementById("gradeBig");
+  gEl.textContent = grade; gEl.style.color = gc;
+  document.getElementById("gradeCard").style.borderColor = gc+"55";
+  const hg = document.getElementById("hGrade");
+  hg.textContent = grade; hg.style.display = "flex"; hg.style.color = gc; hg.style.borderColor = gc+"55";
+
+  // Meta pills
+  const mr = document.getElementById("metaRow");
+  mr.innerHTML = [
+    mpill("TLS", d.tls?.version||"?", tlsPillCls(d.tls?.version), ()=>showTLSVersionInfo(d.tls?.version)),
+    mpill("IP", d.ipAddress||"N/A", "", null),
+    mpill("Port", d.port||443, "", null),
+    mpill("Handshake", (d.handshakeMs||0)+"ms", "", ()=>showHandshakeInfo(d.handshakeMs)),
+    mpill("PFS", d.tls?.forwardSecrecy?"Bəli":"Xeyr", d.tls?.forwardSecrecy?"green":"red", ()=>showFSInfo(d.tls?.forwardSecrecy, d.tls?.cipher)),
+    mpill("CT/SCT", d.transparency?.hasSCT?"Var":"?", d.transparency?.hasSCT?"green":"", ()=>showCTInfo(d.transparency?.hasSCT)),
+    mpill("Açar", `${d.key?.type||"?"} ${d.key?.bits||"?"}b`, "", ()=>showKeyInfo(d.key)),
+  ].join("");
+
+  // Issues
+  const all = d.issueDetails || [];
+  const crits = all.filter(i=>i.sev==="critical");
+  const highs = all.filter(i=>i.sev==="high");
+  const warns = all.filter(i=>["medium","low"].includes(i.sev));
+  let ih = "";
+  if(crits.length) ih += igroup("Kritik Problemlər", crits, "crit", "cnt-r", "var(--red)");
+  if(highs.length) ih += igroup("Yüksək Ciddilik", highs, "high", "cnt-y", "var(--yellow)");
+  if(warns.length) ih += igroup("Xəbərdarlıqlar", warns, "warn", "cnt-b", "var(--blue)");
+  if(!ih) ih = `<div style="display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--green-bg);border:1px solid var(--green-border);border-radius:10px;color:var(--green);font-size:13px">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+    Heç bir problem tapılmadı — sertifikat tamamilə sağlamdır
+  </div>`;
+  document.getElementById("issueSec").innerHTML = ih;
+
+  // CERT TAB
+  const c = d.certificate;
+  if(c){
+    const days = c.daysRemaining;
+    const bw = days===null?0:days<0?0:Math.min(100,(days/365)*100);
+    const bc = days===null?"var(--text3)":days<0?"var(--red)":days<30?"var(--yellow)":"var(--green)";
+    document.getElementById("certPane").innerHTML = `<div class="g2">
+      <div class="card" onclick="showCertIdentityInfo(LAST)"><h4>Kimlik <span class="hint">klik → detallar</span></h4>
+        ${dr("Subject CN", extractCN(c.subject)||c.subject||"N/A")}
+        ${dr("Təşkilat", extractO(c.subject)||"N/A")}
+        ${dr("CA (Issuer)", extractCN(c.issuer)||c.issuer||"N/A")}
+        ${dr("CA Org", extractO(c.issuer)||"N/A")}
+        ${dr("Serial №", c.serialNumber||"N/A")}
+      </div>
+      <div class="card" onclick="showValidityInfo(LAST)"><h4>Etibarlılıq <span class="hint">klik → detallar</span></h4>
+        ${dr("Başlama", fmtDate(c.validFrom))}
+        ${dr("Bitmə", fmtDate(c.validUntil))}
+        ${drRaw("Qalan günlər", `<div style="text-align:right"><span style="font-weight:600;color:${bc}">${days===null?"N/A":days<0?"BİTİB":days+" gün"}</span><div class="dbar-wrap"><div class="dbar" style="width:${bw}%;background:${bc}"></div></div></div>`)}
+        ${dr("Ömür (gün)", c.lifespanDays??"N/A")}
+        ${drRaw("Özü imzalı", badge(c.isSelfSigned?"Bəli":"Xeyr", c.isSelfSigned?"br":"bg"))}
+      </div>
+      <div class="card full" onclick="showFingerprintInfo(LAST)"><h4>İzlər & Alqoritmlər <span class="hint">klik → detallar</span></h4>
+        ${dr("İmza alqoritmi", c.sigAlg)}
+        ${dr("SHA-256 izi", c.fingerprintSHA256)}
+        ${dr("SHA-1 izi", c.fingerprintSHA1)}
+      </div>
+    </div>`;
+  }
+
+  // TLS TAB
+  document.getElementById("tlsPane").innerHTML = `<div class="g2">
+    <div class="card" onclick="showTLSVersionInfo(LAST?.tls?.version)"><h4>Protokol <span class="hint">klik → detallar</span></h4>
+      ${drRaw("TLS Versiyası", badge(d.tls?.version||"?", tlsBadgeCls(d.tls?.version)))}
+      ${drRaw("TLS Qiyməti", `<span style="font-size:22px;font-weight:700;color:${gradeColor(d.tlsGrade)}">${d.tlsGrade||"?"}</span>`)}
+      ${dr("Handshake vaxtı", (d.handshakeMs||0)+" ms")}
+    </div>
+    <div class="card" onclick="showCipherInfo(LAST?.tls)"><h4>Cipher Suite <span class="hint">klik → detallar</span></h4>
+      ${dr("Suite adı", d.tls?.cipher||"N/A")}
+      ${d.tls?.cipherBits ? dr("Açar ölçüsü", d.tls.cipherBits+" bit") : ""}
+      ${drRaw("Forward Secrecy", badge(d.tls?.forwardSecrecy?"Bəli":"Xeyr", d.tls?.forwardSecrecy?"bg":"br"))}
+    </div>
+    <div class="card" onclick="showKeyInfo(LAST?.key)"><h4>Açar <span class="hint">klik → detallar</span></h4>
+      ${dr("Alqoritm", d.key?.type||"N/A")}
+      ${dr("Ölçü", d.key?.bits ? d.key.bits+" bit" : "N/A")}
+      ${drRaw("Güc", keyBadge(d.key))}
+    </div>
+    <div class="card" onclick="showCTInfo(LAST?.transparency?.hasSCT)"><h4>Sertifikat Şəffaflığı <span class="hint">klik → detallar</span></h4>
+      ${drRaw("SCT mövcuddur", badge(d.transparency?.hasSCT?"Bəli":"Bilinmir", d.transparency?.hasSCT?"bg":"bgr"))}
+      ${dr("İmza Alq.", d.certificate?.sigAlg||"N/A")}
+    </div>
+  </div>`;
+
+  // SAN TAB
+  const sans = d.san || [];
+  document.getElementById("sanPane").innerHTML = `<div class="card full" onclick="showSANInfo(LAST)"><h4>Subject Alternative Names — ${sans.length} ad <span class="hint">klik → detallar</span></h4>
+    ${drRaw("Hostname uyğunluğu", badge(d.hostnameOk?"Uyğun":"Uyğunsuz", d.hostnameOk?"bg":"br"))}
+    <div class="san-wrap">${sans.map(s=>`<span class="san-tag">${esc(s)}</span>`).join("")||'<span style="color:var(--text3);font-size:13px">SAN tapılmadı</span>'}</div>
+  </div>`;
+
+  // CHAIN TAB
+  const chain = d.chain || [];
+  document.getElementById("chainPane").innerHTML = `<div class="card full" onclick="showChainInfo(LAST)"><h4>Sertifikat Zənciri — ${chain.length} sertifikat <span class="hint">klik → detallar</span></h4>
+    <div style="margin-top:8px">
+      <div class="chain-item">
+        <div class="chain-line"></div><div class="chain-dot"></div>
+        <div class="chain-cn">${esc(extractCN(d.certificate?.subject)||d.certificate?.subject||d.domain)}</div>
+        <div class="chain-meta">End-entity · ${fmtShort(d.certificate?.validUntil)}</div>
+      </div>
+      ${chain.map((c2,i)=>`<div class="chain-item"><div class="chain-line"></div><div class="chain-dot" style="border-color:var(--border2)"></div>
+        <div class="chain-cn">${esc(extractCN(c2.subject)||c2.subject)}</div>
+        <div class="chain-meta">${i===chain.length-1?"Kök CA":"Aralıq CA"} · ${esc(extractO(c2.issuer)||extractCN(c2.issuer)||"")} · ${fmtShort(c2.validUntil)}</div>
+      </div>`).join("")}
+    </div>
+  </div>`;
+
+  // EXTRA TAB
+  document.getElementById("extraPane").innerHTML = `<div class="g2">
+    <div class="card" onclick="showRevocationInfo(LAST)"><h4>Ləğvetmə <span class="hint">klik → detallar</span></h4>
+      ${dr("OCSP URL", d.revocation?.ocspUrl||"Yoxdur")}
+      ${dr("CRL URL", d.revocation?.crlUrl||"Yoxdur")}
+    </div>
+    <div class="card" onclick="showScoreInfo()"><h4>Bal bölgüsü <span class="hint">klik → detallar</span></h4>
+      ${dr("Ümumi bal", (d.score??0)+" / 100")}
+      ${dr("Kritik/Yüksək", (d.issues?.length||0)+" problem")}
+      ${dr("Xəbərdarlıq", (d.warnings?.length||0)+" ədəd")}
+    </div>
+    <div class="card full"><h4>Server Məlumatları</h4>
+      ${dr("IP ünvanı", d.ipAddress||"N/A")}
+      ${dr("Port", d.port||443)}
+      ${dr("Skan tarixi", fmtDate(d.scannedAt))}
+    </div>
+  </div>`;
+
+  document.getElementById("scanTime").textContent = "Skan: " + fmtDate(d.scannedAt) + " · Node.js real TLS handshake";
+  show("result"); switchTab("cert");
+}
+
+/* ── DRAWER FUNCTIONS ── */
+function openDrawer(html){ document.getElementById("drawerContent").innerHTML = html; document.getElementById("drawerOverlay").classList.add("open"); document.body.style.overflow = "hidden"; }
+function closeDrawer(e){ if(e && e.target !== document.getElementById("drawerOverlay")) return; document.getElementById("drawerOverlay").classList.remove("open"); document.body.style.overflow = ""; }
+
+function showScoreInfo(){
+  if(!LAST) return;
+  const d=LAST, score=d.score??0;
+  const color=score>=80?"var(--green)":score>=50?"var(--yellow)":"var(--red)";
+  const crits=(d.issueDetails||[]).filter(i=>i.sev==="critical");
+  const highs=(d.issueDetails||[]).filter(i=>i.sev==="high");
+  const meds=(d.issueDetails||[]).filter(i=>i.sev==="medium");
+  const lows=(d.issueDetails||[]).filter(i=>i.sev==="low");
+  openDrawer(`
+    <h2>Təhlükəsizlik Balı</h2>
+    <div class="dsub">${d.domain} — həqiqi TLS handshake əsasında</div>
+    <div style="text-align:center;margin:20px 0">
+      <span style="font-size:64px;font-weight:700;color:${color}">${score}</span>
+      <span style="font-size:28px;color:var(--text3)">/100</span>
+    </div>
+    <div class="dinfo-section"><h3>Bal hesablaması</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">Başlanğıc</span><span class="v">100 xal</span></div>
+        <div class="dinfo-row"><span class="k">Kritik (×${crits.length})</span><span class="v" style="color:var(--red)">−${crits.length*30} xal</span></div>
+        <div class="dinfo-row"><span class="k">Yüksək (×${highs.length})</span><span class="v" style="color:var(--yellow)">−${highs.length*15} xal</span></div>
+        <div class="dinfo-row"><span class="k">Orta (×${meds.length})</span><span class="v" style="color:var(--blue)">−${meds.length*8} xal</span></div>
+        <div class="dinfo-row"><span class="k">Aşağı (×${lows.length})</span><span class="v" style="color:var(--text2)">−${lows.length*3} xal</span></div>
+        <div class="dinfo-row" style="border:1px solid var(--border2)"><span class="k" style="font-weight:600">Yekun</span><span class="v" style="color:${color};font-weight:700;font-size:16px">${score} / 100</span></div>
+      </div>
+    </div>
+    <div class="dinfo-section"><h3>Qiymət aralıqları</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">90–100</span><span class="v" style="color:var(--green)">Əla — istehsal üçün hazır</span></div>
+        <div class="dinfo-row"><span class="k">70–89</span><span class="v" style="color:var(--green)">Yaxşı — kiçik yaxşılaşdırma mümkün</span></div>
+        <div class="dinfo-row"><span class="k">50–69</span><span class="v" style="color:var(--yellow)">Orta — xəbərdarlıqları həll edin</span></div>
+        <div class="dinfo-row"><span class="k">1–49</span><span class="v" style="color:var(--red)">Zəif — ciddi problemlər var</span></div>
+        <div class="dinfo-row"><span class="k">0</span><span class="v" style="color:var(--red)">Kritik uğursuzluq</span></div>
+      </div>
+    </div>
+    <div class="tip-box"><b>Texniki qeyd:</b> Bu bal həqiqi Node.js TLS handshake nəticəsindədir — SSL Labs kimi xarici xidmət yox, birbaşa server əlaqəsindən əldə edilib.</div>
+  `);
+}
+
+function showGradeInfo(){
+  if(!LAST) return;
+  const d=LAST, grade=d.tlsGrade||"?";
+  const gc=gradeColor(grade);
+  openDrawer(`
+    <h2>TLS Qiyməti: <span style="color:${gc}">${grade}</span></h2>
+    <div class="dsub">${d.tls?.version||"N/A"} · ${d.tls?.cipher||"N/A"}</div>
+    <div class="dinfo-section"><h3>Bu qiymət nə deməkdir</h3><p>${gradeExplain(grade, d.tls?.version, d.tls?.cipher)}</p></div>
+    <div class="dinfo-section"><h3>Qiymət meyarları</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k" style="color:var(--green)">A+</span><span class="v">TLSv1.3 — PFS məcburi, ən güvənli</span></div>
+        <div class="dinfo-row"><span class="k" style="color:var(--green)">A</span><span class="v">TLSv1.2 + ECDHE + AES-GCM/ChaCha20</span></div>
+        <div class="dinfo-row"><span class="k" style="color:var(--green)">A-</span><span class="v">TLSv1.2 + ECDHE (AEAD yoxdur)</span></div>
+        <div class="dinfo-row"><span class="k" style="color:var(--yellow)">B+</span><span class="v">TLSv1.2 + DHE (PFS var, yavaş)</span></div>
+        <div class="dinfo-row"><span class="k" style="color:var(--yellow)">B</span><span class="v">TLSv1.2 (PFS yoxdur)</span></div>
+        <div class="dinfo-row"><span class="k" style="color:var(--red)">C</span><span class="v">Tanınmayan/zəif konfiqurasiya</span></div>
+        <div class="dinfo-row"><span class="k" style="color:var(--red)">F</span><span class="v">TLS 1.1 və aşağı / RC4 / NULL / EXPORT</span></div>
+        <div class="dinfo-row"><span class="k" style="color:var(--red)">T</span><span class="v">Etibarsız sertifikat (self-signed / expired)</span></div>
+      </div>
+    </div>
+  `);
+}
+
+function showTLSVersionInfo(ver){
+  const v=ver||"N/A";
+  const isNew=v==="TLSv1.3", is12=v==="TLSv1.2";
+  const isOld=["TLSv1","TLSv1.0","TLSv1.1","SSLv3","SSLv2"].some(x=>v.includes(x));
+  openDrawer(`
+    <h2>TLS Versiyası: ${esc(v)}</h2>
+    <div class="dsub">Bu əlaqə üçün istifadə olunan kriptoqrafik protokol</div>
+    <div class="dinfo-section"><h3>TLS nədir?</h3>
+      <p>TLS (Transport Layer Security) — HTTPS əlaqələrini qoruyan protokoldur. Autentifikasiya (serverin kimliyi), gizlilik (şifrələmə) və bütövlük (manipulyasiya aşkarlanması) təmin edir.</p>
+    </div>
+    <div class="dinfo-section"><h3>Versiya tarixi</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">SSL 2.0/3.0</span><span class="v" style="color:var(--red)">Tamamilə sındırılıb (POODLE/DROWN)</span></div>
+        <div class="dinfo-row"><span class="k">TLS 1.0/1.1</span><span class="v" style="color:var(--red)">RFC 8996 ilə 2021-ci ildə ləğv edildi</span></div>
+        <div class="dinfo-row"><span class="k">TLS 1.2 (2008)</span><span class="v" style="color:var(--yellow)">Qəbul edilə bilər — geniş dəstəklənir</span></div>
+        <div class="dinfo-row"><span class="k">TLS 1.3 (2018)</span><span class="v" style="color:var(--green)">Tövsiyə edilir — ən sürətli və güvənli</span></div>
+      </div>
+    </div>
+    <div class="dinfo-section"><h3>Bu server: <span style="color:${isNew?"var(--green)":is12?"var(--yellow)":"var(--red)"}">${esc(v)}</span></h3>
+      <p>${tlsVersionExplain(v)}</p>
+    </div>
+    ${isOld?`<div class="tip-box"><b>Tədqir tələb olunur:</b> nginx-də köhnə versiyaları söndürün:<br><code>ssl_protocols TLSv1.2 TLSv1.3;</code></div>`:""}
+    ${is12?`<div class="tip-box"><b>Məsləhət:</b> <code>ssl_protocols TLSv1.2 TLSv1.3;</code> — hər iki versiyaya dəstək verin.</div>`:""}
+    ${isNew?`<div class="tip-box"><b>Mükəmməl:</b> TLSv1.3 PFS-i məcburi edir, 1-RTT handshake istifadə edir — 2x daha sürətli.</div>`:""}
+  `);
+}
+
+function showCipherInfo(tls){
+  if(!tls) return;
+  const cn=tls.cipher||"N/A";
+  const hasPFS=tls.forwardSecrecy;
+  const hasGCM=cn.toUpperCase().includes("GCM")||cn.toUpperCase().includes("CHACHA");
+  openDrawer(`
+    <h2>Cipher Suite Analizi</h2>
+    <div class="dsub"><code style="background:var(--bg3);padding:2px 8px;border-radius:4px;font-size:13px">${esc(cn)}</code></div>
+    <div class="dinfo-section"><h3>Cipher suite nədir?</h3>
+      <p>Cipher suite — TLS əlaqəsinin necə qorunacağını müəyyən edən dörd kriptoqrafik komponentin kombinasiyasıdır: açar mübadiləsi, autentifikasiya, şifrələmə, MAC.</p>
+    </div>
+    <div class="dinfo-section"><h3>Komponent analizi</h3>
+      ${parseCipherSuite(cn)}
+    </div>
+    <div class="dinfo-section"><h3>Təhlükəsizlik qiymətləndirməsi</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">Perfect Forward Secrecy</span><span class="v" style="color:${hasPFS?"var(--green)":"var(--red)"}">${hasPFS?"✓ Aktiv — keçmiş sessiyalar qorunur":"✗ Qeyri-aktiv — risk var"}</span></div>
+        <div class="dinfo-row"><span class="k">AEAD şifrələmə</span><span class="v" style="color:${hasGCM?"var(--green)":"var(--yellow)"}">${hasGCM?"✓ Bəli (GCM/ChaCha20-Poly1305)":"⚠ CBC modu (köhnə)"}</span></div>
+      </div>
+    </div>
+    <div class="tip-box"><b>Ən yaxşı praktika:</b> ECDHE + AES-256-GCM + SHA384 kombinasiyası optimal seçimdir. nginx-də:<br><code>ssl_ciphers ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;</code></div>
+  `);
+}
+
+function showKeyInfo(key){
+  if(!key) return;
+  const t=key.type||"N/A", b=key.bits||0;
+  openDrawer(`
+    <h2>Açıq Açar: ${esc(t)} ${b}-bit</h2>
+    <div class="dsub">Sertifikatın kriptoqrafik açarı</div>
+    <div class="dinfo-section"><h3>Alqoritm: ${esc(t)}</h3><p>${keyTypeExplain(t,b)}</p></div>
+    <div class="dinfo-section"><h3>Güc müqayisəsi</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">RSA-1024</span><span class="v" style="color:var(--red)">Sındırılıb — heç istifadə etməyin</span></div>
+        <div class="dinfo-row"><span class="k">RSA-2048</span><span class="v" style="color:var(--yellow)">Minimum (~2030-a qədər)</span></div>
+        <div class="dinfo-row"><span class="k">RSA-4096</span><span class="v" style="color:var(--green)">Güclü — tövsiyə edilir</span></div>
+        <div class="dinfo-row"><span class="k">EC P-256 (ECDSA)</span><span class="v" style="color:var(--green)">RSA-3072-ə bərabər, daha sürətli</span></div>
+        <div class="dinfo-row"><span class="k">EC P-384 (ECDSA)</span><span class="v" style="color:var(--green)">RSA-7680-ə bərabər, çox güclü</span></div>
+      </div>
+    </div>
+    <div class="tip-box"><b>Tövsiyə:</b> ECDSA (P-256 və ya P-384) sertifikatları RSA-dan daha kiçik, sürətli və eyni dərəcədə güvənlidir. Let's Encrypt ECDSA sertifikat verir.</div>
+  `);
+}
+
+function showFSInfo(has, cipher){
+  openDrawer(`
+    <h2>Perfect Forward Secrecy (PFS)</h2>
+    <div class="dsub">Sessiya açarlarının gələcəyə qarşı qorunması</div>
+    <div class="dinfo-section"><h3>PFS nədir?</h3>
+      <p>PFS — hücumçu bugünkü trafiği qeyd etsə, gələcəkdə serverin gizli açarını əldə etsə belə, həmin trafiği deşifrə edə bilməməsini təmin edir.</p>
+      <p><b>PFS olmadan:</b> Sessiya açarı serverin uzunmüddətli gizli açarından törəyir — açar ifşa olunsa bütün keçmiş trafik deşifrə olunur.</p>
+      <p><b>PFS ilə (ECDHE):</b> Hər sessiya üçün müvəqqəti açar cütü yaradılır. Sessiya bitdikdə silinir — geri dönmə yolu yoxdur.</p>
+    </div>
+    <div class="dinfo-section"><h3>Bu əlaqə</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">PFS statusu</span><span class="v" style="color:${has?"var(--green)":"var(--red)"}">${has?"✓ Aktiv":"✗ Qeyri-aktiv"}</span></div>
+        <div class="dinfo-row"><span class="k">Cipher</span><span class="v">${esc(cipher||"N/A")}</span></div>
+        <div class="dinfo-row"><span class="k">Mexanizm</span><span class="v">${has?(cipher||"").includes("ECDHE")?"ECDHE (Elliptic Curve DHE)":(cipher||"").includes("DHE")?"DHE (Diffie-Hellman Ephemeral)":"Ephemeral key exchange":"Statik açar mübadiləsi"}</span></div>
+      </div>
+    </div>
+    ${!has?`<div class="tip-box"><b>Həll:</b> nginx-də ECDHE cipher-lərini prioritetləndirin:<br><code>ssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE+CHACHA20';</code></div>`:`<div class="tip-box"><b>Yaxşı:</b> Bu server PFS dəstəkləyir. Gizli açar ifşa olunsa belə keçmiş sessiyalar qorunmuş qalır.</div>`}
+  `);
+}
+
+function showCTInfo(has){
+  openDrawer(`
+    <h2>Certificate Transparency (CT)</h2>
+    <div class="dsub">Sertifikatların ictimai loqlanması</div>
+    <div class="dinfo-section"><h3>CT nədir?</h3>
+      <p>Certificate Transparency — Google-un rəhbərlik etdiyi təşəbbüs. Bütün ictimai TLS sertifikatları açıq, əlavəyönümlü, kriptoqrafik loqlarda qeyd edilməlidir.</p>
+      <p>2018-ci ildən Chrome bütün sertifikatlar üçün etibarlı SCT (Signed Certificate Timestamp) tələb edir. SCT olmayan sertifikatlar xəta göstərir.</p>
+    </div>
+    <div class="dinfo-section"><h3>Bu sertifikat</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">SCT status</span><span class="v" style="color:${has?"var(--green)":"var(--text2)"}">${has?"✓ Mövcuddur":"Müəyyən edilmədi"}</span></div>
+        <div class="dinfo-row"><span class="k">Chrome tələbi</span><span class="v">2018-dən bütün sertifikatlar üçün</span></div>
+      </div>
+    </div>
+    <div class="tip-box"><b>Qeyd:</b> SCT Node.js TLS socket-dən tam müəyyən edilə bilməz — OCSP stapling və ya TLS extension vasitəsilə də göndərilə bilər. Nüfuzlu CA-lar (Let's Encrypt, DigiCert) CT uyğunluğunu avtomatik təmin edir.</div>
+  `);
+}
+
+function showSANInfo(d){
+  if(!d) return;
+  const sans=d.san||[];
+  openDrawer(`
+    <h2>Subject Alternative Names</h2>
+    <div class="dsub">${d.domain} — ${sans.length} ad əhatə edilib</div>
+    <div class="dinfo-section"><h3>SAN nədir?</h3>
+      <p>SAN — sertifikatın hansı hostnamlar üçün etibarlı olduğunu müəyyən edir. Bir sertifikat yüzlərlə domeni əhatə edə bilər. Brauzerlər ziyarət etdiyiniz domeni SAN siyahısı ilə müqayisə edir.</p>
+    </div>
+    <div class="dinfo-section"><h3>Hostname nəticəsi</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">Sorğu domeni</span><span class="v">${esc(d.domain)}</span></div>
+        <div class="dinfo-row"><span class="k">Uyğunluq</span><span class="v" style="color:${d.hostnameOk?"var(--green)":"var(--red)"}">${d.hostnameOk?"✓ Uyğun":"✗ Uyğunsuz — xəbərdarlıq!"}</span></div>
+      </div>
+    </div>
+    <div class="dinfo-section"><h3>Bütün əhatə olunan adlar (${sans.length})</h3>
+      <div class="san-wrap">${sans.map(s=>`<span class="san-tag">${esc(s)}</span>`).join("")||'<span style="color:var(--text3)">Tapılmadı</span>'}</div>
+    </div>
+    <div class="tip-box"><b>Wildcard:</b> <code>*.example.com</code> — bütün birinci səviyyəli subdomenləri əhatə edir (www, mail, api...), lakin sub.sub.example.com-u yox.</div>
+  `);
+}
+
+function showChainInfo(d){
+  if(!d) return;
+  const chain=d.chain||[];
+  openDrawer(`
+    <h2>Sertifikat Zənciri</h2>
+    <div class="dsub">${chain.length+1} sertifikat (end-entity + ${chain.length} CA)</div>
+    <div class="dinfo-section"><h3>Zəncir necə işləyir?</h3>
+      <p>Brauzerinizdə bir neçə Kök CA (Certificate Authority) quraşdırılıb. Bu Kök CA-lar Aralıq CA-ları imzalayır, onlar da veb saytınızın sertifikatını imzalayır. Bu imza zənciri etimadın əsasıdır.</p>
+      <p><code>End-entity cert → Intermediate CA → Root CA</code></p>
+    </div>
+    <div class="dinfo-section"><h3>Bu saytın zənciri</h3>
+      ${[{subject:d.certificate?.subject,issuer:d.certificate?.issuer,validUntil:d.certificate?.validUntil,role:"End-Entity (Saytın sertifikatı)"},...chain.map((c,i)=>({...c,role:i===chain.length-1?"Kök CA (Root CA)":"Aralıq CA (Intermediate)"}))]
+        .map((c,i)=>`<div style="margin-bottom:10px;padding:12px;background:var(--bg3);border-radius:9px;border-left:3px solid ${i===0?"var(--accent)":"var(--border2)"}">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px">${c.role}</div>
+          <div style="font-weight:500;margin-bottom:3px">${esc(extractCN(c.subject)||c.subject||"N/A")}</div>
+          <div style="font-size:11px;color:var(--text3)">Verən: ${esc(extractCN(c.issuer)||c.issuer||"N/A")}</div>
+          ${c.validUntil?`<div style="font-size:11px;color:var(--text3)">Bitmə: ${esc(fmtDate(c.validUntil))}</div>`:""}
+        </div>`).join("")}
+    </div>
+    <div class="tip-box"><b>Ümumi problem:</b> "Natamam zəncir" — server Aralıq CA sertifikatını göndərmir. Let's Encrypt üçün <code>ssl_certificate /path/fullchain.pem;</code> istifadə edin.</div>
+  `);
+}
+
+function showRevocationInfo(d){
+  if(!d) return;
+  openDrawer(`
+    <h2>Sertifikatın Ləğvedilməsi</h2>
+    <div class="dsub">OCSP və CRL mexanizmləri</div>
+    <div class="dinfo-section"><h3>Ləğvetmə nədir?</h3>
+      <p>Sertifikatın gizli açarı ifşa olarsa və ya CA tərəfindən səhv verilmişsə, vaxtından əvvəl ləğv edilə bilər. Brauzerlər bunu yoxlamaq üçün OCSP və ya CRL istifadə edir.</p>
+    </div>
+    <div class="dinfo-section"><h3>Mexanizmlər</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">OCSP</span><span class="v">Real-vaxt yoxlaması — hər sertifikat üçün ayrı sorğu</span></div>
+        <div class="dinfo-row"><span class="k">OCSP Stapling</span><span class="v">Server öncədən OCSP cavabını alır — ən yaxşı performans</span></div>
+        <div class="dinfo-row"><span class="k">CRL</span><span class="v">Ləğv edilmiş sertifikatların siyahısı — köhnə üsul</span></div>
+      </div>
+    </div>
+    <div class="dinfo-section"><h3>Bu sertifikat</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">OCSP URL</span><span class="v">${esc(d.revocation?.ocspUrl||"Yoxdur")}</span></div>
+        <div class="dinfo-row"><span class="k">CRL URL</span><span class="v">${esc(d.revocation?.crlUrl||"Yoxdur")}</span></div>
+      </div>
+    </div>
+  `);
+}
+
+function showHandshakeInfo(ms){
+  openDrawer(`
+    <h2>TLS Handshake: ${ms||0} ms</h2>
+    <div class="dsub">TLS danışıqlarının tamamlanma vaxtı</div>
+    <div class="dinfo-section"><h3>Handshake nədir?</h3>
+      <p>Şifrəli məlumat göndərilmədən əvvəl müştəri və server: TLS versiyası və cipher razılaşdırır, sertifikat göndərilir, açarlar mübadiləsi aparılır.</p>
+    </div>
+    <div class="dinfo-section"><h3>Performans baxışı</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">&lt; 50 ms</span><span class="v" style="color:var(--green)">Əla — eyni region</span></div>
+        <div class="dinfo-row"><span class="k">50–150 ms</span><span class="v" style="color:var(--green)">Yaxşı</span></div>
+        <div class="dinfo-row"><span class="k">150–300 ms</span><span class="v" style="color:var(--yellow)">Qəbul edilə bilər</span></div>
+        <div class="dinfo-row"><span class="k">&gt; 300 ms</span><span class="v" style="color:var(--red)">Yavaş</span></div>
+      </div>
+    </div>
+    <div class="tip-box"><b>TLS 1.3 üstünlüyü:</b> 1-RTT handshake (TLS 1.2-nin 2-RTT-sinə qarşı) — demək olar ki, 2x daha sürətli ilk əlaqə.</div>
+  `);
+}
+
+function showCertIdentityInfo(d){
+  if(!d||!d.certificate) return;
+  const c=d.certificate;
+  openDrawer(`
+    <h2>Sertifikat Kimliyi</h2>
+    <div class="dsub">Kim verdi, kim üçün</div>
+    <div class="dinfo-section"><h3>Subject (sertifikat sahibi)</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">Common Name (CN)</span><span class="v">${esc(extractCN(c.subject)||"N/A")}</span></div>
+        <div class="dinfo-row"><span class="k">Təşkilat (O)</span><span class="v">${esc(extractO(c.subject)||"N/A")}</span></div>
+        <div class="dinfo-row"><span class="k">Tam DN</span><span class="v">${esc(c.subject||"N/A")}</span></div>
+      </div>
+    </div>
+    <div class="dinfo-section"><h3>Issuer (Verən CA)</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">CA CN</span><span class="v">${esc(extractCN(c.issuer)||"N/A")}</span></div>
+        <div class="dinfo-row"><span class="k">CA Org</span><span class="v">${esc(extractO(c.issuer)||"N/A")}</span></div>
+        <div class="dinfo-row"><span class="k">Tam Issuer DN</span><span class="v">${esc(c.issuer||"N/A")}</span></div>
+      </div>
+    </div>
+    <div class="dinfo-section"><h3>Sertifikat növü</h3>
+      <p>${c.isSelfSigned?"⚠ Bu sertifikat <b>özü-özünə imzalanıb</b> — subject və issuer eynidir. Brauzerlər xəbərdarlıq göstərəcək. Daxili/test mühitləri üçün istifadə olunur.":"✓ Bu sertifikat etibarlı CA tərəfindən verilib — brauzerlər avtomatik etibar edir."}</p>
+    </div>
+    <div class="dinfo-section"><h3>Sertifikat növləri</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">DV (Domain Validated)</span><span class="v">Domen sahibliyini yoxlayır — pulsuz (Let's Encrypt)</span></div>
+        <div class="dinfo-row"><span class="k">OV (Organization Validated)</span><span class="v">Təşkilat kimliyini yoxlayır — ödənişli</span></div>
+        <div class="dinfo-row"><span class="k">EV (Extended Validation)</span><span class="v">Ciddi hüquqi yoxlama — ödənişli, banklarda</span></div>
+      </div>
+    </div>
+  `);
+}
+
+function showValidityInfo(d){
+  if(!d||!d.certificate) return;
+  const c=d.certificate; const days=c.daysRemaining;
+  openDrawer(`
+    <h2>Sertifikat Etibarlılığı</h2>
+    <div class="dsub">Sertifikatın vaxtı və bitmə tarixi</div>
+    <div class="dinfo-section"><h3>Cari status</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">Başlama tarixi</span><span class="v">${esc(fmtDate(c.validFrom))}</span></div>
+        <div class="dinfo-row"><span class="k">Bitmə tarixi</span><span class="v">${esc(fmtDate(c.validUntil))}</span></div>
+        <div class="dinfo-row"><span class="k">Qalan günlər</span><span class="v" style="color:${days===null?"var(--text3)":days<0?"var(--red)":days<30?"var(--yellow)":"var(--green)"}">${days===null?"N/A":days<0?"BİTİB ("+Math.abs(days)+" gün əvvəl)":days+" gün"}</span></div>
+        <div class="dinfo-row"><span class="k">Ümumi ömür</span><span class="v">${c.lifespanDays??0} gün ${c.lifespanDays>398?"⚠ 398 gündən artıq":""}</span></div>
+      </div>
+    </div>
+    <div class="dinfo-section"><h3>Maksimal sertifikat ömrü tarixi</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">2018-ə qədər</span><span class="v">3 ilə qədər icazə verilirdi</span></div>
+        <div class="dinfo-row"><span class="k">2020–bu gün</span><span class="v">Maks. 398 gün (Apple)</span></div>
+        <div class="dinfo-row"><span class="k">2026 (Chrome təklifi)</span><span class="v" style="color:var(--yellow)">Maks. 47 gün</span></div>
+      </div>
+    </div>
+    <div class="tip-box"><b>Ən yaxşı praktika:</b> Avtomatik yeniləmə — Certbot ilə Let's Encrypt. 30 gün öncə xəbərdarlıq qurun.</div>
+  `);
+}
+
+function showFingerprintInfo(d){
+  if(!d||!d.certificate) return;
+  const c=d.certificate;
+  openDrawer(`
+    <h2>Sertifikat İzləri</h2>
+    <div class="dsub">Unikal kriptoqrafik identifikatorlar</div>
+    <div class="dinfo-section"><h3>İz nədir?</h3>
+      <p>Sertifikat izi — sertifikatın ikili məzmununun hash-idir. Ən kiçik dəyişiklik tamamilə fərqli iz verir. İzlər sertifikatı pinning, yoxlama və müqayisə üçün istifadə olunur.</p>
+    </div>
+    <div class="dinfo-section"><h3>${esc(d.domain)}</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">SHA-256</span><span class="v" style="font-size:10px;letter-spacing:.5px">${esc(c.fingerprintSHA256)}</span></div>
+        <div class="dinfo-row"><span class="k">SHA-1 ⚠</span><span class="v" style="font-size:10px;letter-spacing:.5px;color:var(--yellow)">${esc(c.fingerprintSHA1)}</span></div>
+      </div>
+    </div>
+    <div class="dinfo-section"><h3>İmza alqoritmi: ${esc(c.sigAlg)}</h3>
+      <p>${sigAlgExplain(c.sigAlg)}</p>
+    </div>
+  `);
+}
+
+async function showIssueDetail(msg, sev){
+  const sevColors={"critical":"var(--red)","high":"var(--yellow)","medium":"var(--blue)","low":"var(--text2)"};
+  const sevColor=sevColors[sev]||"var(--text3)";
+  openDrawer(`
+    <h2 style="margin-bottom:10px">${esc(msg)}</h2>
+    <div class="status-pill" style="background:${sevColor}20;color:${sevColor};border:1px solid ${sevColor}40">${sev?.toUpperCase()}</div>
+    <div id="aiResult">
+      <div style="display:flex;align-items:center;gap:10px;color:var(--text2);font-size:13px;padding:20px 0">
+        <div style="width:18px;height:18px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .65s linear infinite;flex-shrink:0"></div>
+        AI ilə ətraflı izahat hazırlanır…
+      </div>
+    </div>
+  `);
+  await loadAIExplanation(msg, sev, sevColor);
+}
+
+async function loadAIExplanation(msg, sev, sevColor){
+  const aiDiv=document.getElementById("aiResult"); if(!aiDiv) return;
+  const domain=LAST?.domain||"N/A", tlsVer=LAST?.tls?.version||"N/A";
+  const cipher=LAST?.tls?.cipher||"N/A", score=LAST?.score??0;
+  const grade=LAST?.tlsGrade||"?", daysLeft=LAST?.certificate?.daysRemaining;
+
+  const prompt=`Sən TLS/SSL sertifikat təhlükəsizlik mütəxəssisisən. AZERBAYCAN DİLİNDƏ ətraflı cavab ver.
+
+REAL SKAN NƏTİCƏSİ (Node.js TLS handshake):
+- Domen: ${domain}
+- TLS versiyası: ${tlsVer}
+- Cipher: ${cipher}
+- Qiymət: ${grade}
+- Bal: ${score}/100
+- Qalan günlər: ${daysLeft??'N/A'}
+- Xəbərdarlıq: "${msg}" (${sev?.toUpperCase()})
+
+Yalnız HTML ilə cavab ver, heç bir markdown yox:
+
+<div class="dinfo-section"><h3>🔍 Texniki izahat</h3><p>[mahiyyət, hansı standarta ziddir]</p></div>
+<div class="dinfo-section"><h3>⚠️ Real təhlükə</h3><p>[konkret ssenarilər]</p></div>
+<div class="dinfo-section"><h3>🛠️ Həll (nginx/Apache/Caddy)</h3><p>[konfiqurasiya nümunələri ilə]</p></div>
+<div class="dinfo-section"><h3>✅ Yoxlama</h3><p>[hansı alətlərlə yoxlamaq olar]</p></div>
+<div class="tip-box"><b>Pro məsləhət:</b> [${domain}-ə xas tövsiyə]</div>`;
+
+  try{
+    const resp=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:prompt}]})
+    });
+    const data=await resp.json();
+    const html=data.content?.[0]?.text||"";
+    if(aiDiv) aiDiv.innerHTML=`<hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
+      <div class="ai-label"><svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/></svg>AI tərəfindən ətraflı analiz</div>${html}`;
+  }catch(err){
+    if(aiDiv) aiDiv.innerHTML=`<div class="tip-box" style="color:var(--red)">AI izahatı yüklənə bilmədi.</div>`;
+  }
+}
+
+/* ── HELPERS ── */
+function dr(l,v){return`<div class="drow"><span class="lbl">${l}</span><span class="val">${esc(String(v??"N/A"))}</span></div>`}
+function drRaw(l,h){return`<div class="drow"><span class="lbl">${l}</span>${h}</div>`}
+function badge(t,c){return`<span class="badge ${c}">${t}</span>`}
+function gradeColor(g){if(!g||g==="?")return"var(--text3)";if(["A+","A"].includes(g))return"var(--green)";if(["A-","B+","B"].includes(g))return"var(--yellow)";return"var(--red)"}
+function tlsBadgeCls(v){if(!v)return"bgr";if(v==="TLSv1.3")return"bg";if(v==="TLSv1.2")return"by";return"br"}
+function tlsPillCls(v){if(!v)return"";if(v==="TLSv1.3")return"green";if(v==="TLSv1.2")return"yellow";return"red"}
+function keyBadge(key){if(!key||!key.bits)return badge("Bilinmir","bgr");if(key.type==="RSA"){if(key.bits>=4096)return badge("Güclü","bg");if(key.bits>=2048)return badge("Qəbul edilir","by");return badge("Zəif","br")}if(["EC","ECDSA"].includes(key.type)){if(key.bits>=256)return badge("Güclü","bg");return badge("Zəif","br")}return badge(key.type||"?","bgr")}
+function extractCN(dn){const m=/CN=([^,]+)/i.exec(dn||"");return m?m[1].trim():""}
+function extractO(dn){const m=/\bO=([^,]+)/i.exec(dn||"");return m?m[1].trim():""}
+function fmtDate(iso){if(!iso)return"N/A";try{return new Date(iso).toLocaleString("az-AZ")}catch{return iso}}
+function fmtShort(iso){if(!iso)return"N/A";try{return new Date(iso).toLocaleDateString("az-AZ")}catch{return iso}}
+function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function setLoading(v){document.getElementById("loading").style.display=v?"":"none";document.getElementById("btn").disabled=v;document.getElementById("btn").textContent=v?"Skan edilir…":"Skan et"}
+function setProgress(p){document.getElementById("progFill").style.width=p+"%"}
+function showErr(m){const el=document.getElementById("err");el.textContent=m;el.style.display="block"}
+function hideErr(){document.getElementById("err").style.display="none"}
+function show(id){document.getElementById(id).style.display=""}
+function hide(id){document.getElementById(id).style.display="none"}
+function switchTab(name){
+  const map={cert:"certPane",tls:"tlsPane",san:"sanPane",chain:"chainPane",extra:"extraPane"};
+  document.querySelectorAll(".tab-pane").forEach(p=>p.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach((t,i)=>t.classList.toggle("active",["cert","tls","san","chain","extra"][i]===name));
+  document.getElementById(map[name])?.classList.add("active");
+}
+function mpill(l,v,cls,fn){
+  const c=cls==="green"?"color:var(--green)":cls==="red"?"color:var(--red)":cls==="yellow"?"color:var(--yellow)":"color:var(--text)";
+  return`<div class="mpill" ${fn?`onclick="${fn.toString().replace(/"/g,"'")}"`:""}><span>${l}:</span><b style="${c}">${esc(String(v))}</b></div>`
+}
+function igroup(title,items,cls,cntCls,dotColor){
+  return`<div class="igroup"><div class="ihead ${cls}"><h4>${title}</h4><span class="icnt ${cntCls}">${items.length}</span></div><div class="ibody">${items.map(i=>`<div class="iitem" onclick="showIssueDetail(${JSON.stringify(i.msg)},${JSON.stringify(i.sev)})"><div class="idot" style="background:${dotColor}"></div><span class="itext">${esc(i.msg)}</span><span class="iinfo-btn">AI ilə izah →</span></div>`).join("")}</div></div>`
+}
+function tlsVersionExplain(v){const m={"TLSv1.3":"TLSv1.3 (RFC 8446, 2018) — cari standart. PFS məcburi, bütün köhnə alqoritmlər silinib, 1-RTT handshake.","TLSv1.2":"TLSv1.2 (RFC 5246, 2008) — qəbul edilə bilər. 2-RTT handshake. TLSv1.3-ə yüksəltmək tövsiyə edilir.","TLSv1.1":"TLSv1.1 — RFC 8996 ilə 2021-ci ildə ləğv edildi. Chrome/Firefox/Safari dəstəkləmir.","TLSv1.0":"TLSv1.0 — RFC 8996 ilə ləğv edildi. BEAST hücumuna həssasdır.","SSLv3":"SSL 3.0 — POODLE hücumu ilə tamamilə sındırılıb (CVE-2014-3566).","SSLv2":"SSL 2.0 — fəlakətvi dizayn qüsurları. RFC 6176 ilə 2011-dən qadağandır."};return m[v]||`${v} — tanınmayan versiya.`}
+function keyTypeExplain(t,b){if(t==="RSA")return`RSA — ən geniş dəstəklənən açar alqoritmi. RSA-${b}: ${b>=4096?"güclü":b>=2048?"qəbul edilə bilər":"zəif — TƏCİLİ yeniləyin"}.`;if(["EC","ECDSA"].includes(t))return`ECDSA — elliptik əyri kriptoqrafiyası. EC-${b} — RSA-${b>=384?7680:b>=256?3072:1024}-ə bərabər güc, çox kiçik açar ölçüsü.`;return`${t} — bu alqoritm haqqında standartları yoxlayın.`}
+function sigAlgExplain(a){const l=(a||"").toLowerCase();if(l.includes("sha256")||l.includes("sha384")||l.includes("sha512"))return`${a} — müasir, təhlükəsiz. SHA-2 ailəsi, heç bir praktik hücum bilinmir.`;if(l.includes("sha1"))return`⚠ SHA-1 — 2017-ci ildə Google collision hücumu nümayiş etdirdi (SHAttered). Köhnəlmiş.`;if(l.includes("md5"))return`🔴 MD5 — tamamilə sındırılıb. 2000-ci illərin əvvəlindən ləğv edilib.`;return`${a} — cari standartlara uyğunluğunu yoxlayın.`}
+function parseCipherSuite(name){let h="<div class='dinfo-kv'>";if(name.includes("TLS_"))h+=`<div class="dinfo-row"><span class="k">Protokol</span><span class="v">TLS 1.3 cipher suite</span></div>`;if(name.includes("ECDHE"))h+=`<div class="dinfo-row"><span class="k">Açar mübadiləsi</span><span class="v">ECDHE — PFS verir ✓</span></div>`;else if(name.includes("DHE"))h+=`<div class="dinfo-row"><span class="k">Açar mübadiləsi</span><span class="v">DHE — PFS verir, yavaş</span></div>`;else if(name.includes("RSA"))h+=`<div class="dinfo-row"><span class="k">Açar mübadiləsi</span><span class="v" style="color:var(--yellow)">RSA — statik, PFS yoxdur</span></div>`;if(name.includes("ECDSA"))h+=`<div class="dinfo-row"><span class="k">Autentifikasiya</span><span class="v">ECDSA</span></div>`;if(name.includes("AES256")||name.includes("AES_256"))h+=`<div class="dinfo-row"><span class="k">Şifrələmə</span><span class="v">AES-256 — çox güclü ✓</span></div>`;else if(name.includes("AES128")||name.includes("AES_128"))h+=`<div class="dinfo-row"><span class="k">Şifrələmə</span><span class="v">AES-128 — güclü ✓</span></div>`;else if(name.includes("CHACHA20"))h+=`<div class="dinfo-row"><span class="k">Şifrələmə</span><span class="v">ChaCha20-Poly1305 — mobil üçün əla ✓</span></div>`;else if(name.includes("RC4"))h+=`<div class="dinfo-row"><span class="k">Şifrələmə</span><span class="v" style="color:var(--red)">RC4 — SINDIRILMIŞ! ✗</span></div>`;if(name.includes("GCM"))h+=`<div class="dinfo-row"><span class="k">MAC/Mod</span><span class="v">GCM — AEAD ✓</span></div>`;else if(name.includes("POLY1305"))h+=`<div class="dinfo-row"><span class="k">MAC</span><span class="v">Poly1305 — AEAD ✓</span></div>`;else if(name.includes("SHA384"))h+=`<div class="dinfo-row"><span class="k">MAC</span><span class="v">HMAC-SHA384</span></div>`;else if(name.includes("SHA256"))h+=`<div class="dinfo-row"><span class="k">MAC</span><span class="v">HMAC-SHA256</span></div>`;h+="</div>";return h}
+function gradeExplain(g,ver,cipher){const c=(cipher||"").toUpperCase();if(g==="A+")return"TLSv1.3 — ən yüksək standart. PFS məcburi, bütün köhnə alqoritmlər yoxdur, 1-RTT handshake.";if(g==="A")return"TLSv1.2 + ECDHE + AEAD (AES-GCM/ChaCha20). Güclü, müasir konfigurasiya.";if(g==="A-")return"TLSv1.2 + ECDHE (PFS var), lakin AEAD şifirləmə yoxdur. Yaxşı, amma yaxşılaşdırıla bilər.";if(g==="B+"||g==="B")return`TLSv1.2, lakin cipher konfigurasiyası optimal deyil. ${c.includes("ECDHE")||c.includes("DHE")?"PFS var":"PFS yoxdur"}. ECDHE+AESGCM-ə keçin.`;if(g==="F")return"Kritik! Köhnəlmiş TLS versiyası və ya sındırılmış cipher (RC4/NULL/EXPORT). Dərhal düzəldin!";if(g==="T")return"Etibarsız sertifikat — özü-özünə imzalanıb, sürəsi bitib və ya etibarsız CA-dan alınıb. Brauzerlər xəbərdarlıq göstərir.";return`${g} qiyməti — konfigurasiya yaxşılaşdırıla bilər.`}
+
+function addHist(d){scanHistory=scanHistory.filter(h=>h.domain!==d.domain);scanHistory.unshift({domain:d.domain,status:d.status,score:d.score,grade:d.tlsGrade,time:Date.now()});scanHistory=scanHistory.slice(0,8);try{localStorage.setItem("tls_hist_v2",JSON.stringify(scanHistory))}catch{}renderHist()}
+function renderHist(){const sec=document.getElementById("histSec"),list=document.getElementById("histList");if(!scanHistory.length){sec.style.display="none";return}sec.style.display="";const dc={SECURE:"var(--green)",WARNING:"var(--yellow)",DANGER:"var(--red)",ERROR:"var(--text3)"};list.innerHTML=scanHistory.map(h=>`<div class="hitem" onclick="go('${esc(h.domain)}')"><div class="hdot" style="background:${dc[h.status]||"var(--text3)"}"></div><span class="hdom">${esc(h.domain)}</span><span class="badge ${h.status==="SECURE"?"bg":h.status==="WARNING"?"by":"br"}" style="font-size:10px">${h.status||"?"}</span>${h.grade?`<span style="font-size:13px;font-weight:700;color:${gradeColor(h.grade)}">${h.grade}</span>`:""}<span class="htime">${timeSince(h.time)}</span></div>`).join("")}
+function timeSince(ts){const d=Date.now()-ts;if(d<60000)return"indi";if(d<3600000)return Math.floor(d/60000)+"d əvvəl";if(d<86400000)return Math.floor(d/3600000)+"s əvvəl";return Math.floor(d/86400000)+"g əvvəl"}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeDrawer()});
+renderHist();
+</script>
+</body>
+</html>
