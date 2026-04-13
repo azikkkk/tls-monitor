@@ -196,6 +196,23 @@ header h1{font-size:15px;font-weight:600;letter-spacing:-.2px}
 .tip-box code{background:var(--bg4);padding:1px 5px;border-radius:4px;font-size:11px;font-family:'SF Mono',Consolas,monospace}
 .status-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:9px;font-size:13px;font-weight:500;margin-bottom:16px}
 
+/* PROTOCOL SUPPORT TABLE */
+.proto-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+@media(max-width:560px){.proto-grid{grid-template-columns:repeat(2,1fr)}}
+.proto-cell{border-radius:10px;padding:12px 10px;text-align:center;border:1px solid var(--border)}
+.proto-cell.supported{background:var(--green-bg);border-color:var(--green-border)}
+.proto-cell.insecure{background:var(--red-bg);border-color:var(--red-border)}
+.proto-cell.unsupported{background:var(--bg3);border-color:var(--border)}
+.proto-ver{font-size:13px;font-weight:700;margin-bottom:4px}
+.proto-cell.supported .proto-ver{color:var(--green)}
+.proto-cell.insecure .proto-ver{color:var(--red)}
+.proto-cell.unsupported .proto-ver{color:var(--text3)}
+.proto-status{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
+.proto-cell.supported .proto-status{color:var(--green)}
+.proto-cell.insecure .proto-status{color:var(--red)}
+.proto-cell.unsupported .proto-status{color:var(--text3)}
+.proto-cipher{font-size:10px;color:var(--text3);font-family:'SF Mono',Consolas,monospace;word-break:break-all;line-height:1.4}
+
 /* HISTORY */
 .hist{margin-top:40px}
 .hist h3{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:12px}
@@ -498,6 +515,36 @@ function render(d){
       ${drRaw("SCT mövcuddur", badge(d.transparency?.hasSCT?"Bəli":"Bilinmir", d.transparency?.hasSCT?"bg":"bgr"))}
       ${dr("İmza Alq.", d.certificate?.sigAlg||"N/A")}
     </div>
+  </div>`;
+
+  // PROTOCOL SUPPORT PANEL (inside TLS tab, after main cards)
+  const ps = d.protocolSupport || {};
+  const protoOrder = ["TLSv1.3","TLSv1.2","TLSv1.1","TLSv1.0"];
+  const protoLabels = {"TLSv1.3":"TLS 1.3","TLSv1.2":"TLS 1.2","TLSv1.1":"TLS 1.1","TLSv1.0":"TLS 1.0"};
+  const protoDesc   = {
+    "TLSv1.3":"RFC 8446 · 2018 · Cari standart — PFS məcburi, 1-RTT",
+    "TLSv1.2":"RFC 5246 · 2008 · Qəbul edilir — PFS mümkün",
+    "TLSv1.1":"RFC 4346 · Ləğv edilib (RFC 8996, 2021)",
+    "TLSv1.0":"RFC 2246 · Ləğv edilib (RFC 8996) — BEAST hücumu",
+  };
+  const protoSecure = {"TLSv1.3":true,"TLSv1.2":true,"TLSv1.1":false,"TLSv1.0":false};
+
+  const protoCells = protoOrder.map(ver => {
+    const info = ps[ver];
+    if (!info) return `<div class="proto-cell unsupported"><div class="proto-ver">${protoLabels[ver]}</div><div class="proto-status">Yoxlanılmadı</div><div class="proto-cipher">${protoDesc[ver]}</div></div>`;
+    if (!info.supported) return `<div class="proto-cell unsupported"><div class="proto-ver">${protoLabels[ver]}</div><div class="proto-status">✗ Dəstəklənmir</div><div class="proto-cipher">${protoDesc[ver]}</div></div>`;
+    const cls = protoSecure[ver] ? "supported" : "insecure";
+    const icon = protoSecure[ver] ? "✓" : "⚠";
+    return `<div class="proto-cell ${cls}" onclick="showProtoDetail('${ver}',${JSON.stringify(info)})">
+      <div class="proto-ver">${protoLabels[ver]}</div>
+      <div class="proto-status">${icon} ${protoSecure[ver]?"Aktiv":"AKTİV — RİSK"}</div>
+      <div class="proto-cipher">${esc(info.cipher||"")}<br>${info.forwardSecrecy?"PFS ✓":"PFS ✗"}</div>
+    </div>`;
+  }).join("");
+
+  document.getElementById("tlsPane").innerHTML += `<div class="card full" style="margin-top:0" onclick="">
+    <h4>Dəstəklənən Protokollar <span class="hint">hər birini klik → detallar</span></h4>
+    <div class="proto-grid">${protoCells}</div>
   </div>`;
 
   // SAN TAB
@@ -982,6 +1029,39 @@ function gradeExplain(g,ver,cipher){const c=(cipher||"").toUpperCase();if(g==="A
 function addHist(d){scanHistory=scanHistory.filter(h=>h.domain!==d.domain);scanHistory.unshift({domain:d.domain,status:d.status,score:d.score,grade:d.tlsGrade,time:Date.now()});scanHistory=scanHistory.slice(0,8);try{localStorage.setItem("tls_hist_v2",JSON.stringify(scanHistory))}catch{}renderHist()}
 function renderHist(){const sec=document.getElementById("histSec"),list=document.getElementById("histList");if(!scanHistory.length){sec.style.display="none";return}sec.style.display="";const dc={SECURE:"var(--green)",WARNING:"var(--yellow)",DANGER:"var(--red)",ERROR:"var(--text3)"};list.innerHTML=scanHistory.map(h=>`<div class="hitem" onclick="go('${esc(h.domain)}')"><div class="hdot" style="background:${dc[h.status]||"var(--text3)"}"></div><span class="hdom">${esc(h.domain)}</span><span class="badge ${h.status==="SECURE"?"bg":h.status==="WARNING"?"by":"br"}" style="font-size:10px">${h.status||"?"}</span>${h.grade?`<span style="font-size:13px;font-weight:700;color:${gradeColor(h.grade)}">${h.grade}</span>`:""}<span class="htime">${timeSince(h.time)}</span></div>`).join("")}
 function timeSince(ts){const d=Date.now()-ts;if(d<60000)return"indi";if(d<3600000)return Math.floor(d/60000)+"d əvvəl";if(d<86400000)return Math.floor(d/3600000)+"s əvvəl";return Math.floor(d/86400000)+"g əvvəl"}
+function showProtoDetail(ver, info){
+  const labels={"TLSv1.3":"TLS 1.3","TLSv1.2":"TLS 1.2","TLSv1.1":"TLS 1.1","TLSv1.0":"TLS 1.0"};
+  const secure={"TLSv1.3":true,"TLSv1.2":true,"TLSv1.1":false,"TLSv1.0":false};
+  const gc = secure[ver]?"var(--green)":"var(--red)";
+  const statusTxt = !info.supported ? "Dəstəklənmir" : (secure[ver]?"Aktiv (Təhlükəsiz)":"AKTİV — RİSK!");
+  const rfcInfo = {
+    "TLSv1.3":"RFC 8446 (2018). PFS məcburidir. Yalnız AEAD cipher-lər. 0-RTT/1-RTT handshake. Köhnə alqoritmlər (RSA key exchange, SHA-1, MD5, RC4, 3DES) tamamilə silindi.",
+    "TLSv1.2":"RFC 5246 (2008). Hələ qəbul edilə bilər. 2-RTT handshake. PFS ixtiyaridir (cipher seçiminə görə). TLSv1.3-ə yüksəltmək tövsiyə edilir.",
+    "TLSv1.1":"RFC 4346 (2006). RFC 8996 ilə 2021-ci ildə Chrome, Firefox, Safari tərəfindən dəstək dayandırıldı. BEAST hücumuna qarşı qismən qorunma var, lakin bütövlükdə köhnəlmiş.",
+    "TLSv1.0":"RFC 2246 (1999). RFC 8996 ilə rəsmən ləğv edildi. BEAST (CVE-2011-3389) hücumuna həssasdır. PCI DSS 3.1 tərəfindən qadağan edilib.",
+  };
+  const fix = {
+    "TLSv1.1":"nginx: <code>ssl_protocols TLSv1.2 TLSv1.3;</code><br>Apache: <code>SSLProtocol -all +TLSv1.2 +TLSv1.3</code>",
+    "TLSv1.0":"nginx: <code>ssl_protocols TLSv1.2 TLSv1.3;</code><br>Apache: <code>SSLProtocol -all +TLSv1.2 +TLSv1.3</code>",
+  };
+
+  openDrawer(`
+    <h2>${labels[ver]||ver} — Protokol Analizi</h2>
+    <div class="dsub" style="color:${gc}">${statusTxt}</div>
+    <div class="dinfo-section"><h3>Bu nədir?</h3><p>${rfcInfo[ver]||""}</p></div>
+    ${info.supported ? `<div class="dinfo-section"><h3>Bu server üçün müzakirə nəticəsi</h3>
+      <div class="dinfo-kv">
+        <div class="dinfo-row"><span class="k">Razılaşdırılan versiya</span><span class="v">${esc(info.negotiated||ver)}</span></div>
+        <div class="dinfo-row"><span class="k">Cipher Suite</span><span class="v">${esc(info.cipher||"N/A")}</span></div>
+        ${info.cipherBits?`<div class="dinfo-row"><span class="k">Açar ölçüsü</span><span class="v">${info.cipherBits} bit</span></div>`:""}
+        <div class="dinfo-row"><span class="k">Forward Secrecy</span><span class="v" style="color:${info.forwardSecrecy?"var(--green)":"var(--red)"}">${info.forwardSecrecy?"✓ Aktiv":"✗ Yoxdur"}</span></div>
+      </div>
+    </div>` : `<div class="dinfo-section"><h3>Nəticə</h3><p style="color:var(--green)">✓ Server bu versiya üçün əlaqəni rədd edir — düzgün konfiqurasiya.</p></div>`}
+    ${fix[ver] && info.supported ? `<div class="tip-box"><b>Həll — bu versiyani söndürün:</b><br>${fix[ver]}</div>` : ""}
+    ${!fix[ver] && info.supported ? `<div class="tip-box"><b>Əla:</b> Bu versiya dəstəklənir və təhlükəsizdir. Daha yüksək performans üçün TLSv1.3 prioritet edin.</div>` : ""}
+  `);
+}
+
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeDrawer()});
 renderHist();
 </script>
