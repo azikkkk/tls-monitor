@@ -43,7 +43,7 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         domain, port, status: "ERROR", score: 0, tlsGrade: "?",
         error: e.message,
-        issueDetails: [{ msg: "Qoşulma uğursuz: " + e.message, sev: "critical" }],
+        issueDetails: [{ msg: "Qoşulma uğursuz oldu: " + e.message, sev: "critical" }],
         scannedAt: new Date().toISOString(),
       }),
     };
@@ -56,13 +56,16 @@ async function inspectTLS(domain, port = 443) {
 
   // IP resolve
   let ipAddress = "N/A";
-  try { ipAddress = (await dns.resolve4(domain))[0] || "N/A"; } catch (_) {}
+  try { 
+    const addresses = await dns.resolve4(domain);
+    ipAddress = addresses[0] || "N/A"; 
+  } catch (_) {}
 
   // Primary connection (server's preferred version)
   const primary = await doTLSConnect(domain, port);
   const handshakeMs = Date.now() - start;
 
-  // Multi-version probe — run in parallel, short timeout
+  // Multi-version probe — run sequentially for stability
   const probeResults = await probeProtocols(domain, port);
 
   const parsed = parseCert(primary.cert, domain);
@@ -96,7 +99,6 @@ async function inspectTLS(domain, port = 443) {
     },
     transparency: { hasSCT: parsed.hasSCT },
     handshakeMs,
-    // ── NEW: supported protocol breakdown ──
     protocolSupport: probeResults,
     issueDetails: issues,
     issues:   issues.filter(i => ["critical","high"].includes(i.sev)),
@@ -119,85 +121,123 @@ async function inspectTLS(domain, port = 443) {
 }
 
 /* ── MULTI-PROTOCOL PROBE ── */
-// Returns: { "TLSv1.3": { supported, cipher, error }, "TLSv1.2": {...}, ... }
+// Ardıcıl yoxlama + retry mexanizmi
 async function probeProtocols(domain, port) {
-  const targets = [
-    { label: "TLSv1.3",  minVersion: "TLSv1.3", maxVersion: "TLSv1.3" },
-    { label: "TLSv1.2",  minVersion: "TLSv1.2", maxVersion: "TLSv1.2" },
-    { label: "TLSv1.1",  minVersion: "TLSv1.1", maxVersion: "TLSv1.1" },
-    { label: "TLSv1.0",  minVersion: "TLSv1",   maxVersion: "TLSv1"   },
+  const versions = [
+    { label: "TLSv1.3", min: "TLSv1.3", max: "TLSv1.3" },
+    { label: "TLSv1.2", min: "TLSv1.2", max: "TLSv1.2" },
+    { label: "TLSv1.1", min: "TLSv1.1", max: "TLSv1.1" },
+    { label: "TLSv1.0", min: "TLSv1",   max: "TLSv1" },
   ];
 
   const results = {};
-  await Promise.all(targets.map(async t => {
+  
+  for (const v of versions) {
     try {
-      const r = await doTLSConnectVersioned(domain, port, t.minVersion, t.maxVersion);
-      results[t.label] = {
+      let r = await tryConnect(domain, port, v.min, v.max, 5000);
+      results[v.label] = {
         supported: true,
         negotiated: r.tlsVersion,
         cipher: r.cipher.name || "N/A",
         cipherBits: r.cipher.secretKeySize || null,
         forwardSecrecy: isForwardSecure(r.cipher.name),
+        error: null
       };
     } catch (e) {
-      results[t.label] = {
-        supported: false,
-        error: simplifyError(e.message),
-      };
+      // Bir cəhd daha (retry)
+      try {
+        await new Promise(r => setTimeout(r, 100));
+        let r = await tryConnect(domain, port, v.min, v.max, 6000);
+        results[v.label] = {
+          supported: true,
+          negotiated: r.tlsVersion,
+          cipher: r.cipher.name || "N/A",
+          cipherBits: r.cipher.secretKeySize || null,
+          forwardSecrecy: isForwardSecure(r.cipher.name),
+          error: null
+        };
+      } catch (e2) {
+        const errMsg = e2.message || "";
+        const isExplicitlyDisabled = 
+          errMsg.includes("no protocols available") ||
+          errMsg.includes("wrong version number") ||
+          errMsg.includes("protocol version") ||
+          errMsg.includes("handshake failure");
+        
+        results[v.label] = {
+          supported: false,
+          negotiated: null,
+          cipher: null,
+          cipherBits: null,
+          forwardSecrecy: false,
+          error: isExplicitlyDisabled ? "Rədd edildi (dəstəklənmir)" : "Qoşulma uğursuz oldu"
+        };
+      }
     }
-  }));
+  }
+  
   return results;
 }
 
-function simplifyError(msg) {
-  if (/no protocols available|version/i.test(msg)) return "Versiya dəstəklənmir";
-  if (/timeout/i.test(msg))  return "Zaman aşımı";
-  if (/ECONNREFUSED/i.test(msg)) return "Əlaqə rədd edildi";
-  return "Dəstəklənmir";
+function tryConnect(domain, port, minVersion, maxVersion, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const opts = {
+      host: domain,
+      port: port,
+      servername: domain,
+      rejectUnauthorized: false,
+      requestCert: true,
+      checkServerIdentity: () => undefined,
+    };
+    
+    if (minVersion) opts.minVersion = minVersion;
+    if (maxVersion) opts.maxVersion = maxVersion;
+
+    const socket = tls.connect(opts, () => {
+      const tlsVersion = socket.getProtocol();
+      const cipher = socket.getCipher() || {};
+      socket.end();
+      resolve({ tlsVersion, cipher });
+    });
+
+    socket.setTimeout(timeoutMs, () => {
+      socket.destroy();
+      reject(new Error("Timeout"));
+    });
+
+    socket.on("error", (err) => {
+      reject(err);
+    });
+  });
 }
 
 /* ── TLS CONNECT (server chooses version) ── */
 function doTLSConnect(domain, port) {
   return new Promise((resolve, reject) => {
     const socket = tls.connect({
-      host: domain, port, servername: domain,
+      host: domain, 
+      port: port, 
+      servername: domain,
       rejectUnauthorized: false,
-      requestCert: true, timeout: 10000,
+      requestCert: true, 
+      timeout: 15000,
       checkServerIdentity: () => undefined,
     }, () => {
-      const cert       = socket.getPeerCertificate(true);
-      const tlsVersion  = socket.getProtocol() || "N/A";
-      const cipher     = socket.getCipher() || {};
-      const authorized  = socket.authorized;
-      const authError   = socket.authorizationError || null;
+      const cert = socket.getPeerCertificate(true);
+      const tlsVersion = socket.getProtocol() || "N/A";
+      const cipher = socket.getCipher() || {};
+      const authorized = socket.authorized;
+      const authError = socket.authorizationError || null;
       socket.end();
       resolve({ cert, tlsVersion, cipher, authorized, authError });
     });
-    socket.setTimeout(10000, () => { socket.destroy(); reject(new Error("Connection timeout")); });
-    socket.on("error", err => reject(new Error("TLS error: " + err.message)));
-  });
-}
-
-/* ── TLS CONNECT (force specific version) ── */
-function doTLSConnectVersioned(domain, port, minVersion, maxVersion) {
-  return new Promise((resolve, reject) => {
-    const opts = {
-      host: domain, port, servername: domain,
-      rejectUnauthorized: false,
-      requestCert: true, timeout: 7000,
-      checkServerIdentity: () => undefined,
-    };
-    // minVersion/maxVersion are supported in Node 12+
-    try { opts.minVersion = minVersion; opts.maxVersion = maxVersion; } catch (_) {}
-
-    const socket = tls.connect(opts, () => {
-      const tlsVersion = socket.getProtocol() || "N/A";
-      const cipher     = socket.getCipher() || {};
-      socket.end();
-      resolve({ tlsVersion, cipher });
+    
+    socket.setTimeout(15000, () => { 
+      socket.destroy(); 
+      reject(new Error("Connection timeout")); 
     });
-    socket.setTimeout(7000, () => { socket.destroy(); reject(new Error("timeout")); });
-    socket.on("error", err => reject(new Error(err.message)));
+    
+    socket.on("error", err => reject(new Error("TLS error: " + err.message)));
   });
 }
 
@@ -205,13 +245,13 @@ function doTLSConnectVersioned(domain, port, minVersion, maxVersion) {
 function parseCert(cert, domain) {
   if (!cert || !cert.subject) return emptyParsed();
 
-  const subject     = dnToString(cert.subject);
-  const issuer      = dnToString(cert.issuer);
+  const subject = dnToString(cert.subject);
+  const issuer = dnToString(cert.issuer);
   const isSelfSigned = subject === issuer ||
     (cert.issuerCertificate && cert.issuerCertificate === cert);
 
-  const validFrom  = cert.valid_from ? new Date(cert.valid_from).toISOString() : null;
-  const validUntil = cert.valid_to   ? new Date(cert.valid_to).toISOString()   : null;
+  const validFrom = cert.valid_from ? new Date(cert.valid_from).toISOString() : null;
+  const validUntil = cert.valid_to ? new Date(cert.valid_to).toISOString() : null;
   const daysRemaining = validUntil
     ? Math.round((new Date(validUntil) - Date.now()) / 86400000) : null;
   const lifespanDays = (validFrom && validUntil)
@@ -229,15 +269,15 @@ function parseCert(cert, domain) {
   }
 
   const fingerprintSHA256 = cert.fingerprint256 || "N/A";
-  const fingerprintSHA1   = cert.fingerprint    || "N/A";
-  const serialNumber      = cert.serialNumber   || "N/A";
-  const sigAlg            = cert.sigalg         || "N/A";
+  const fingerprintSHA1 = cert.fingerprint || "N/A";
+  const serialNumber = cert.serialNumber || "N/A";
+  const sigAlg = cert.sigalg || "N/A";
 
   const ocsp = [], crl = [];
   if (cert.infoAccess) {
     const ia = cert.infoAccess;
     const arr = v => Array.isArray(v) ? v : [v];
-    if (ia["OCSP - URI"])       arr(ia["OCSP - URI"]).forEach(u => ocsp.push(u));
+    if (ia["OCSP - URI"]) arr(ia["OCSP - URI"]).forEach(u => ocsp.push(u));
     if (ia["CA Issuers - URI"]) arr(ia["CA Issuers - URI"]).forEach(u => crl.push(u));
   }
 
@@ -249,10 +289,10 @@ function parseCert(cert, domain) {
   while (cur && cur !== cert && !seen.has(cur.fingerprint)) {
     seen.add(cur.fingerprint);
     chain.push({
-      subject:    dnToString(cur.subject),
-      issuer:     dnToString(cur.issuer),
-      validFrom:  cur.valid_from ? new Date(cur.valid_from).toISOString() : null,
-      validUntil: cur.valid_to   ? new Date(cur.valid_to).toISOString()   : null,
+      subject: dnToString(cur.subject),
+      issuer: dnToString(cur.issuer),
+      validFrom: cur.valid_from ? new Date(cur.valid_from).toISOString() : null,
+      validUntil: cur.valid_to ? new Date(cur.valid_to).toISOString() : null,
     });
     cur = cur.issuerCertificate;
   }
@@ -269,16 +309,16 @@ function parseCert(cert, domain) {
 function dnToString(dn) {
   if (!dn) return "N/A";
   if (typeof dn === "string") return dn;
-  return Object.entries(dn).map(([k,v]) => `${k}=${Array.isArray(v)?v.join(","):v}`).join(", ");
+  return Object.entries(dn).map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(",") : v}`).join(", ");
 }
 
 function emptyParsed() {
   return {
-    subject:"N/A", issuer:"N/A", isSelfSigned:false,
-    validFrom:null, validUntil:null, daysRemaining:null, lifespanDays:null,
-    keyType:"N/A", keyBits:0, san:[], fingerprintSHA256:"N/A",
-    fingerprintSHA1:"N/A", serialNumber:"N/A", sigAlg:"N/A",
-    ocsp:[], crl:[], hasSCT:false, chain:[],
+    subject: "N/A", issuer: "N/A", isSelfSigned: false,
+    validFrom: null, validUntil: null, daysRemaining: null, lifespanDays: null,
+    keyType: "N/A", keyBits: 0, san: [], fingerprintSHA256: "N/A",
+    fingerprintSHA1: "N/A", serialNumber: "N/A", sigAlg: "N/A",
+    ocsp: [], crl: [], hasSCT: false, chain: [],
   };
 }
 
@@ -286,7 +326,7 @@ function isForwardSecure(name) {
   if (!name) return false;
   const n = name.toUpperCase();
   return n.includes("ECDHE") || n.includes("DHE") ||
-         n.includes("TLS_AES") || n.includes("TLS_CHACHA");
+    n.includes("TLS_AES") || n.includes("TLS_CHACHA");
 }
 
 /* ── ISSUES ── */
@@ -297,7 +337,7 @@ function buildIssues(parsed, tlsVersion, cipher, authorized, authError, domain, 
   if (days !== null && days < 0)
     issues.push({ msg: "Sertifikatın müddəti bitib", sev: "critical" });
   else if (days !== null && days < 14)
-    issues.push({ msg: `Sertifikat ${days} gün sonra bitəcək — TƏCİLİ`, sev: "critical" });
+    issues.push({ msg: `Sertifikat ${days} gün sonra bitəcək — TƏCİLİ yeniləyin`, sev: "critical" });
   else if (days !== null && days < 30)
     issues.push({ msg: `Sertifikat ${days} gün sonra bitəcək`, sev: "high" });
 
@@ -307,11 +347,9 @@ function buildIssues(parsed, tlsVersion, cipher, authorized, authError, domain, 
   if (!authorized && authError && !parsed.isSelfSigned)
     issues.push({ msg: `Sertifikat doğrulanmadı: ${authError}`, sev: "critical" });
 
-  // Obsolete protocol from actual negotiated version
   if (["TLSv1", "TLSv1.0", "TLSv1.1", "SSLv3", "SSLv2"].includes(tlsVersion))
     issues.push({ msg: `Köhnəlmiş TLS versiyası: ${tlsVersion} (RFC 8996 ilə ləğv edilib)`, sev: "critical" });
 
-  // Weak protocol support from probes
   if (probes) {
     if (probes["TLSv1.0"]?.supported)
       issues.push({ msg: "Server TLS 1.0 dəstəkləyir — BEAST hücumu riski (RFC 8996)", sev: "high" });
@@ -323,21 +361,21 @@ function buildIssues(parsed, tlsVersion, cipher, authorized, authError, domain, 
     issues.push({ msg: "Perfect Forward Secrecy (PFS) aktiv deyil", sev: "high" });
 
   const cn = (cipher.name || "").toUpperCase();
-  if (cn.includes("RC4"))    issues.push({ msg: "RC4 şifirləməsi — tamamilə sındırılıb (RFC 7465)", sev: "critical" });
-  if (cn.includes("NULL"))   issues.push({ msg: "NULL şifirləmə — heç bir şifrələmə yoxdur", sev: "critical" });
+  if (cn.includes("RC4")) issues.push({ msg: "RC4 şifirləməsi — tamamilə sındırılıb (RFC 7465)", sev: "critical" });
+  if (cn.includes("NULL")) issues.push({ msg: "NULL şifirləmə — heç bir şifrələmə yoxdur", sev: "critical" });
   if (cn.includes("EXPORT")) issues.push({ msg: "EXPORT cipher — qəsdən zəiflədilmiş (FREAK hücumu)", sev: "critical" });
   if (cn.includes("DES") && !cn.includes("3DES"))
     issues.push({ msg: "DES şifirləmə — 56-bit, sındırılıb", sev: "critical" });
 
   if (parsed.keyType === "RSA" && parsed.keyBits > 0 && parsed.keyBits < 2048)
-    issues.push({ msg: `Zəif RSA açarı: ${parsed.keyBits} bit (minimum 2048)`, sev: "critical" });
+    issues.push({ msg: `Zəif RSA açarı: ${parsed.keyBits} bit (minimum 2048 tələb olunur)`, sev: "critical" });
 
   if (parsed.lifespanDays && parsed.lifespanDays > 398)
-    issues.push({ msg: `Sertifikat ömrü ${parsed.lifespanDays} gün — tövsiyə ≤398 gün`, sev: "medium" });
+    issues.push({ msg: `Sertifikat ömrü ${parsed.lifespanDays} gün — tövsiyə olunan: ≤398 gün`, sev: "medium" });
 
   const sigA = (parsed.sigAlg || "").toLowerCase();
   if (sigA.includes("sha1")) issues.push({ msg: "SHA-1 imza alqoritmi — köhnəlmiş (SHAttered hücumu)", sev: "high" });
-  if (sigA.includes("md5"))  issues.push({ msg: "MD5 imza alqoritmi — tamamilə sındırılıb", sev: "critical" });
+  if (sigA.includes("md5")) issues.push({ msg: "MD5 imza alqoritmi — tamamilə sındırılıb", sev: "critical" });
 
   if (!parsed.hasSCT && !parsed.isSelfSigned)
     issues.push({ msg: "Certificate Transparency (SCT) aşkar edilmədi", sev: "medium" });
@@ -353,37 +391,32 @@ function buildIssues(parsed, tlsVersion, cipher, authorized, authError, domain, 
 
 /* ── GRADE ── */
 function computeGrade(tlsVersion, cipher, authorized, parsed, issues) {
-  // Untrusted cert
   if (!authorized || parsed.isSelfSigned) return "T";
 
   const criticals = issues.filter(i => i.sev === "critical");
   const ver = tlsVersion || "";
-  const cn  = (cipher.name || "").toUpperCase();
+  const cn = (cipher.name || "").toUpperCase();
 
-  // Catastrophic
   if (ver.match(/^(TLSv1$|TLSv1\.0|TLSv1\.1|SSLv)/)) return "F";
   if (cn.includes("RC4") || cn.includes("NULL") || cn.includes("EXPORT")) return "F";
 
-  // Other criticals (expired cert, weak key, MD5 sig...)
   if (criticals.length > 0) return "C";
 
-  // TLS 1.3 — best
   if (ver === "TLSv1.3") {
     const highs = issues.filter(i => i.sev === "high");
     return highs.length === 0 ? "A+" : "A";
   }
 
-  // TLS 1.2
   if (ver === "TLSv1.2") {
     const hasECDHE = cn.includes("ECDHE");
-    const hasDHE   = cn.includes("DHE");
-    const hasAEAD  = cn.includes("GCM") || cn.includes("CHACHA") || cn.includes("POLY1305");
-    const highs    = issues.filter(i => i.sev === "high");
+    const hasDHE = cn.includes("DHE");
+    const hasAEAD = cn.includes("GCM") || cn.includes("CHACHA") || cn.includes("POLY1305");
+    const highs = issues.filter(i => i.sev === "high");
 
     if (hasECDHE && hasAEAD && highs.length === 0) return "A";
-    if (hasECDHE && hasAEAD)  return "A-";
+    if (hasECDHE && hasAEAD) return "A-";
     if (hasECDHE && !hasAEAD) return "B+";
-    if (hasDHE)               return "B";
+    if (hasDHE) return "B";
     return "B-";
   }
 
