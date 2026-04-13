@@ -517,35 +517,51 @@ function render(d){
     </div>
   </div>`;
 
-  // PROTOCOL SUPPORT PANEL (inside TLS tab, after main cards)
-  const ps = d.protocolSupport || {};
-  const protoOrder = ["TLSv1.3","TLSv1.2","TLSv1.1","TLSv1.0"];
-  const protoLabels = {"TLSv1.3":"TLS 1.3","TLSv1.2":"TLS 1.2","TLSv1.1":"TLS 1.1","TLSv1.0":"TLS 1.0"};
-  const protoDesc   = {
-    "TLSv1.3":"RFC 8446 · 2018 · Cari standart — PFS məcburi, 1-RTT",
-    "TLSv1.2":"RFC 5246 · 2008 · Qəbul edilir — PFS mümkün",
-    "TLSv1.1":"RFC 4346 · Ləğv edilib (RFC 8996, 2021)",
-    "TLSv1.0":"RFC 2246 · Ləğv edilib (RFC 8996) — BEAST hücumu",
-  };
-  const protoSecure = {"TLSv1.3":true,"TLSv1.2":true,"TLSv1.1":false,"TLSv1.0":false};
+ // PROTOCOL SUPPORT PANEL (inside TLS tab, after main cards)
+const ps = d.protocolSupport || {};
+const protoOrder = ["TLSv1.3","TLSv1.2","TLSv1.1","TLSv1.0"];
+const protoLabels = {"TLSv1.3":"TLS 1.3","TLSv1.2":"TLS 1.2","TLSv1.1":"TLS 1.1","TLSv1.0":"TLS 1.0"};
+const protoDesc = {
+  "TLSv1.3":"RFC 8446 · 2018 · Cari standart — PFS məcburi, 1-RTT",
+  "TLSv1.2":"RFC 5246 · 2008 · Qəbul edilir — PFS mümkün",
+  "TLSv1.1":"RFC 4346 · Ləğv edilib (RFC 8996, 2021)",
+  "TLSv1.0":"RFC 2246 · Ləğv edilib (RFC 8996) — BEAST hücumu",
+};
+const protoSecure = {"TLSv1.3":true,"TLSv1.2":true,"TLSv1.1":false,"TLSv1.0":false};
 
-  const protoCells = protoOrder.map(ver => {
-    const info = ps[ver];
-    if (!info) return `<div class="proto-cell unsupported"><div class="proto-ver">${protoLabels[ver]}</div><div class="proto-status">Yoxlanılmadı</div><div class="proto-cipher">${protoDesc[ver]}</div></div>`;
-    if (!info.supported) return `<div class="proto-cell unsupported"><div class="proto-ver">${protoLabels[ver]}</div><div class="proto-status">✗ Dəstəklənmir</div><div class="proto-cipher">${protoDesc[ver]}</div></div>`;
-    const cls = protoSecure[ver] ? "supported" : "insecure";
-    const icon = protoSecure[ver] ? "✓" : "⚠";
-    return `<div class="proto-cell ${cls}" onclick="showProtoDetail('${ver}',${JSON.stringify(info)})">
+const protoCells = protoOrder.map(ver => {
+  const info = ps[ver];
+  
+  if (!info) {
+    return `<div class="proto-cell unsupported">
       <div class="proto-ver">${protoLabels[ver]}</div>
-      <div class="proto-status">${icon} ${protoSecure[ver]?"Aktiv":"AKTİV — RİSK"}</div>
-      <div class="proto-cipher">${esc(info.cipher||"")}<br>${info.forwardSecrecy?"PFS ✓":"PFS ✗"}</div>
+      <div class="proto-status">Yoxlanılmadı</div>
+      <div class="proto-cipher">${protoDesc[ver]}</div>
     </div>`;
-  }).join("");
-
-  document.getElementById("tlsPane").innerHTML += `<div class="card full" style="margin-top:0" onclick="">
-    <h4>Dəstəklənən Protokollar <span class="hint">hər birini klik → detallar</span></h4>
-    <div class="proto-grid">${protoCells}</div>
+  }
+  
+  if (!info.supported) {
+    const isExplicitlyDisabled = info.error && info.error.includes("Rədd edildi");
+    const statusText = isExplicitlyDisabled ? "✗ Rədd edildi" : "✗ Dəstəklənmir";
+    const statusColor = isExplicitlyDisabled ? "var(--green)" : "var(--text3)";
+    
+    return `<div class="proto-cell unsupported">
+      <div class="proto-ver">${protoLabels[ver]}</div>
+      <div class="proto-status" style="color:${statusColor}">${statusText}</div>
+      <div class="proto-cipher">${protoDesc[ver]}</div>
+    </div>`;
+  }
+  
+  const cls = protoSecure[ver] ? "supported" : "insecure";
+  const icon = protoSecure[ver] ? "✓" : "⚠";
+  const statusText = protoSecure[ver] ? "Aktiv" : "AKTİV — RİSK!";
+  
+  return `<div class="proto-cell ${cls}" onclick="showProtoDetail('${ver}',${JSON.stringify(info).replace(/"/g, '&quot;')})">
+    <div class="proto-ver">${protoLabels[ver]}</div>
+    <div class="proto-status">${icon} ${statusText}</div>
+    <div class="proto-cipher">${esc(info.cipher||"")}<br>${info.forwardSecrecy?"PFS ✓":"PFS ✗"}</div>
   </div>`;
+}).join("");
 
   // SAN TAB
   const sans = d.san || [];
